@@ -155,6 +155,79 @@
       #turnIndicator.my-turn { background-color: #28a745; color: white; text-shadow: 1px 1px 2px black; }
       #turnIndicator.other-turn { background-color: #333; color: #aaa; }
       .hidden { display: none; }
+
+      .floating-nav-container {
+          position: fixed;
+          top: 20px;          /* [แก้] เปลี่ยนจาก bottom เป็น top */
+          right: 20px;        /* ชิดขวาเหมือนเดิม */
+          display: flex;
+          flex-direction: column; /* [แก้] ให้เมนูย้อยลงมาข้างล่าง (เดิม reverse คือเด้งขึ้น) */
+          align-items: flex-end;
+          gap: 10px;
+          z-index: 2000;      /* [แก้] เพิ่มเลขให้สูงกว่า Volume Control (ปกติ Volume มักจะ 1000) */
+      }
+
+      /* ปุ่มหลัก (วงกลมใหญ่) */
+      .fab-main {
+          width: 60px;
+          height: 60px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #ffae00, #ff4500);
+          color: white;
+          font-size: 24px;
+          border: 2px solid #fff;
+          box-shadow: 0 4px 15px rgba(255, 69, 0, 0.6);
+          cursor: pointer;
+          transition: transform 0.3s;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+      }
+      .fab-main:hover {
+          transform: scale(1.1) rotate(90deg);
+      }
+
+      /* ปุ่มย่อย (ซ่อนอยู่) */
+      .fab-options {
+          display: flex;
+          flex-direction: column; /* [แก้] เรียงลงล่าง */
+          gap: 10px;
+          margin-top: 5px;    /* [แก้] ระยะห่างจากปุ่มหลัก */
+          
+          opacity: 0;
+          visibility: hidden;
+          transform: translateY(-20px); /* [แก้] เริ่มต้นซ่อนอยู่ด้านบน */
+          transition: all 0.3s ease;
+      }
+
+      .floating-nav-container.active .fab-options {
+          opacity: 1;
+          visibility: visible;
+          transform: translateY(0);
+      }
+
+      /* สไตล์ปุ่มย่อย */
+      .fab-btn {
+          padding: 10px 20px;
+          border-radius: 30px;
+          border: none;
+          font-family: 'Prompt', sans-serif;
+          font-weight: bold;
+          color: white;
+          cursor: pointer;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          transition: transform 0.2s;
+          width: auto; /* ไม่ต้องเต็มจอ */
+      }
+      .fab-btn:hover { transform: scale(1.05); }
+
+      /* สีเฉพาะปุ่ม */
+      .btn-guild { background: linear-gradient(90deg, #007bff, #0056b3); }
+      .btn-shop  { background: linear-gradient(90deg, #28a745, #1e7e34); }
+      .btn-inn   { background: linear-gradient(90deg, #17a2b8, #117a8b); }
     </style>
 </head>
 <body>
@@ -314,6 +387,30 @@
             </div>
         </div>
     </div>
+
+    <!-- ปุ่มลอยตัวสำหรับนำทาง -->
+    <div id="floatingNav" class="floating-nav-container">
+    
+    <button class="fab-main" onclick="toggleFloatingMenu()">
+        🧭
+    </button>
+
+    <div class="fab-options">
+        <button class="fab-btn btn-guild" onclick="goToLocation('guild')">
+            🛡️ กิลด์
+        </button>
+        
+        <button class="fab-btn btn-shop" onclick="goToLocation('shops')">
+            🛒 ร้านค้า
+        </button>
+        
+        <button class="fab-btn btn-inn" onclick="goToLocation('inn')">
+            🏨 โรงเตี๊ยม
+        </button>
+    </div>
+</div>
+
+
       
     <!-- [อัปเกรด v2] โหลด Script ใหม่ตามลำดับ -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
@@ -329,6 +426,28 @@
     <script src="Javascript/charector.js"></script>   <!-- (v2) ฟังก์ชัน calculateHP -->
     <script src="Javascript/player-dashboard-script.js"></script>
     <script src="Javascript/player-actions.js"></script> 
+
+    <script>
+    // ฟังก์ชันเปิด/ปิด เมนู
+    function toggleFloatingMenu() {
+        const container = document.getElementById('floatingNav');
+        container.classList.toggle('active');
+    }
+
+    // ฟังก์ชันเดินทาง (สั่งงานไปยังหน้าแม่ map.html)
+    function goToLocation(locationId) {
+        // ปิดเมนูก่อน
+        toggleFloatingMenu();
+
+        // ตรวจสอบว่าหน้าแม่มีฟังก์ชัน showBuildingUI หรือไม่
+        if (window.parent && typeof window.parent.showBuildingUI === 'function') {
+            window.parent.showBuildingUI(locationId);
+        } else {
+            console.error("ไม่พบฟังก์ชัน showBuildingUI ในหน้าหลัก (ต้องเปิดผ่าน map.html)");
+            Swal.fire('ข้อผิดพลาด', 'กรุณาเปิดผ่านหน้า map.html เพื่อใช้งานฟังก์ชันนี้', 'error');
+        }
+    }
+</script>
     
     
 </body>

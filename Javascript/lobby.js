@@ -140,7 +140,7 @@ async function promptRoleSelection(roomId, roomData) {
         sessionStorage.setItem('roomId', roomId);
         localStorage.setItem('currentUserUid', user.uid);
         Swal.close();
-        window.location.href = 'player-dashboard.html';
+        window.location.href = 'map.html';
       });
 
       modal.querySelector('#swal-dm-btn').addEventListener('click', async () => {

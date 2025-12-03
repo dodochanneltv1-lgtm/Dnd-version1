@@ -199,6 +199,24 @@
         <div id="dm-dice-animation-area"></div>
         <div id="dmDiceResult"></div>
     </div>
+        <div class="panel">
+          <h2 style="color: #ff4d4d;">⚔️ จัดการประลอง (PvP)</h2>
+          <p>เลือกผู้เล่น 2 คนจากรายการที่ลงทะเบียน เพื่อเริ่มการต่อสู้</p>
+          
+          <div style="display: flex; gap: 10px; align-items: center;">
+              <div style="flex: 1;">
+                  <label style="color: #66b2ff;">ผู้ท้าชิง 1 (สีน้ำเงิน):</label>
+                  <select id="pvpPlayer1"></select>
+              </div>
+              <div style="font-weight: bold; font-size: 1.5em; color: #ffae00;">VS</div>
+              <div style="flex: 1;">
+                  <label style="color: #ff6666;">ผู้ท้าชิง 2 (สีแดง):</label>
+                  <select id="pvpPlayer2"></select>
+              </div>
+          </div>
+
+          <button onclick="startPvPMatch()" style="background: linear-gradient(90deg, #d63031, #b71540); margin-top: 15px;">⚔️ เริ่มการประลอง!</button>
+      </div>
     </div>
 
     <div class="panel">
@@ -358,6 +376,12 @@
         <input type="number" id="shopItemDurability" value="100">
         <p><small>หมายเหตุ: ระบบจะดึง "โบนัส" จาก Panel "สร้างไอเทมพิเศษ" ที่คุณกรอกไว้</small></p>
         <button onclick="addShopItemToDB()" style="background-color: #28a745;">➕ เพิ่มไอเทมเข้าร้านค้า</button>
+
+        <hr style="border-color: #555; margin: 20px 0;">
+        <h4 style="color: #ffc107;">📦 สินค้าในร้าน (<span id="shopItemCount">0</span> ชิ้น)</h4>
+        <div id="currentShopItemsList" style="max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px;">
+            <p style="color:#aaa; text-align:center;">กำลังโหลด...</p>
+        </div>
     </div>
     
     <div class="panel">
@@ -372,6 +396,12 @@
         <label>เมื่อถึงเลเวล:</label>
         <input type="number" id="guildQuestForLevel" min="1" placeholder="เช่น 20">
         <button onclick="addGuildQuestToDB()" style="background-color: #007bff;">➕ เพิ่มเควสเลื่อนขั้น</button>
+
+        <hr style="border-color: #555; margin: 20px 0;">
+        <h4 style="color: #ffc107;">📜 เควสที่มีอยู่ (<span id="guildQuestCount">0</span> เควส)</h4>
+        <div id="currentGuildQuestsList" style="max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px;">
+            <p style="color:#aaa; text-align:center;">กำลังโหลด...</p>
+        </div>
     </div>
 
     <div class="panel">

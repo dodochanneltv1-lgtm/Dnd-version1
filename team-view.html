@@ -208,6 +208,29 @@
                             <li><strong>CHA:</strong> ${calculateTotalStat_TeamView(player, 'CHA')}</li>
                         </ul>
                     </div>
+
+                    <div style="margin-top: 15px; border-top: 1px dashed #555; padding-top: 10px;">
+                        <h4 style="margin: 0 0 5px 0; color: #ffae00; font-size: 1em;">🛡️ อุปกรณ์สวมใส่</h4>
+                        <ul style="font-size: 0.9em; list-style: none; padding: 0; color: #ccc;">
+                            ${(() => {
+                                const slots = { mainHand: 'มือหลัก', offHand: 'มือรอง', head: 'หัว', chest: 'ตัว', legs: 'ขา', feet: 'เท้า' };
+                                let itemsHtml = '';
+                                if (player.equippedItems) {
+                                    for (const [key, label] of Object.entries(slots)) {
+                                        const item = player.equippedItems[key];
+                                        if (item) {
+                                            const dura = item.durability !== undefined ? ` [${item.durability}%]` : '';
+                                            itemsHtml += `<li style="margin-bottom: 2px;">
+                                                <span style="color: #aaa;">${label}:</span> 
+                                                <span style="color: #fff;">${item.name}${dura}</span>
+                                            </li>`;
+                                        }
+                                    }
+                                }
+                                return itemsHtml || '<li><em>- ไม่มีอุปกรณ์ -</em></li>';
+                            })()}
+                        </ul>
+                    </div>
                 `;
                 teamViewContainer.appendChild(card);
             }

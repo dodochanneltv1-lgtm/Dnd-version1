@@ -1,27 +1,4 @@
-/*
-* =================================================================
-* Javascript/map.js (v3 - FIXED)
-* -----------------------------------------------------------------
-* นี่คือ "สมอง" ของ map.html (ข้อ 10, 11)
-* - จัดการ UI แผนที่
-* - จัดการ UI และตรรกะของ กิลด์ (เลื่อนขั้น, อาชีพรอง)
-* - จัดการ UI และตรรกะของ โรงเตี๊ยม (พักผ่อน)
-* - จัดการ UI และตรรกะของ ร้านค้า (ซื้อของ, หักเงิน, ความทนทาน)
-*
-* [ ⭐️ KONGFA-FIX ⭐️ ]
-* - แก้ไขบั๊กคำนวณสเตตัส (Stat Calculation Bug)
-* - ลบฟังก์ชัน `calculateTotalStat_Map` ที่ล้าสมัยออก
-* - เพิ่มฟังก์ชัน `calculateTotalStat` (Master Version) ที่ถูกต้อง
-* (ตัดส่วน Aura ออก เพราะ map.js ไม่จำเป็นต้องใช้)
-* - อัปเดต `loadInnUI` และ `restAtInn` ให้เรียกใช้ฟังก์ชันใหม่
-*
-* [ ⭐️ KONGFA-FIX (Bug 5) ⭐️ ]
-* - แก้ไข `buyItem` ให้คัดลอก `item.effects` เมื่อซื้อยา
-* - แก้ไข `buyItem` (isStackable) ให้เช็ค `effects` ด้วย
-* =================================================================
-*/
 
-// --- Global State ---
 const roomId = sessionStorage.getItem('roomId');
 const currentUserUid = localStorage.getItem('currentUserUid'); // (Lobby.js v3 จะ set ค่านี้)
 let playerRef = null;
@@ -34,13 +11,6 @@ let shopData = {}; // (เก็บข้อมูลร้านค้าทั
 const calcHPFn = typeof calculateHP === 'function' ? calculateHP : () => { console.error("calculateHP not found!"); return 10; };
 const getStatBonusFn = typeof getStatBonus === 'function' ? getStatBonus : () => { console.error("getStatBonus not found!"); return 0; };
 
-
-// =================================================================================
-// [ ⭐️ KONGFA-FIX ⭐️ ]
-// 0. Master Stat Calculation Function (v3.1)
-// (นี่คือฟังก์ชันเวอร์ชันเต็มที่คัดลอกมาจาก player-dashboard-script.js)
-// (ตัดส่วนที่ 5: Aura ออก เพราะ map.js ไม่ได้โหลด allPlayersInRoom)
-// =================================================================================
 
 function calculateTotalStat(charData, statKey) {
     if (!charData || !charData.stats) return 0;
@@ -185,9 +155,7 @@ function calculateTotalStat(charData, statKey) {
 // (ส่วนนี้ไม่มีบั๊ก คงเดิม)
 // =================================================================================
 
-/**
- * แสดง UI Modal หลัก (แผนที่, กิลด์, ร้านค้า)
- */
+
 function showMapUI(panelId) {
     const container = document.getElementById('map-ui-container');
     if (!container) return;
@@ -219,9 +187,7 @@ function showMapUI(panelId) {
     container.classList.remove('hidden');
 }
 
-/**
- * ซ่อน UI Modal หลัก
- */
+
 function hideMapUI() {
     const container = document.getElementById('map-ui-container');
     if (container) {
@@ -259,6 +225,10 @@ function showBuildingUI(buildingId) {
              targetPanelId = 'shop-item-panel';
              // (openShop() จะเรียกอันนี้เอง)
              break;
+        case 'colosseum':
+            targetPanelId = 'colosseum-panel'; // ชื่อ ID ของ div ที่เราสร้างใน map.html
+            loadColosseumUI(); // เรียกฟังก์ชันโหลดรายชื่อคน (ที่เพิ่งเพิ่มไป)
+            break;
         default:
             targetPanelId = 'building-map-panel';
             break;
@@ -275,9 +245,7 @@ function showBuildingUI(buildingId) {
 // (ส่วนนี้ไม่มีบั๊ก คงเดิม)
 // =================================================================================
 
-/**
- * โหลดข้อมูล UI กิลด์ (เควส + อาชีพรอง)
- */
+
 function loadGuildUI() {
     if (!playerData) {
         console.error("Guild: Player data not loaded yet.");
@@ -309,43 +277,42 @@ function loadGuildUI() {
     loadGuildQuests();
 }
 
-/**
- * โหลดเควสเลื่อนขั้น (ข้อ 10)
- */
 function loadGuildQuests() {
     const listDiv = document.getElementById('guild-quest-list');
-    listDiv.innerHTML = '<h4>เควสเลื่อนขั้น</h4>';
+    listDiv.innerHTML = '<h3 style="color:#ffc107; border-bottom:1px solid #555; padding-bottom:5px;">📋 ภารกิจเลื่อนขั้น</h3>';
     let foundQuest = false;
 
     if (!guildQuests || Object.keys(guildQuests).length === 0) {
-        listDiv.innerHTML += '<p><em>ยังไม่มีเควสเลื่อนขั้นจาก DM</em></p>';
+        listDiv.innerHTML += '<p style="text-align:center; padding:20px; color:#aaa;"><em>- ไม่มีประกาศจากกิลด์ -</em></p>';
         return;
     }
 
     for (const questId in guildQuests) {
         const quest = guildQuests[questId];
         
-        // ตรวจสอบว่าเควสนี้ตรงกับ (อาชีพหลัก) และ (เลเวล) ของผู้เล่นหรือไม่
-        if (quest.requiredClass === playerData.classMain && quest.requiredLevel <= playerData.level) {
+        // กรอง: อาชีพต้องตรง และ เลเวลต้องถึง
+        if (quest.requiredClass === playerData.classMain && playerData.level >= quest.requiredLevel) {
             
-            // (ตรวจสอบว่าผู้เล่นรับเควสนี้ไปหรือยัง)
             const playerHasQuest = (playerData.quest && playerData.quest.id === questId);
-            const playerCompletedQuest = (playerData.completedQuests && playerData.completedQuests.includes(questId));
-
-            let buttonHtml = '';
-            if (playerCompletedQuest) {
-                buttonHtml = '<button disabled style="background-color: #28a745;">สำเร็จแล้ว</button>';
-            } else if (playerHasQuest) {
-                buttonHtml = '<button disabled style="background-color: #ffc107; color: black;">รับแล้ว</button>';
+            
+            let btnHtml = '';
+            if (playerHasQuest) {
+                btnHtml = '<button disabled style="width:100%; padding:8px; background-color:#ffc107; color:#000; border:none; border-radius:5px; font-weight:bold; cursor:default;">กำลังดำเนินการ...</button>';
             } else {
-                buttonHtml = `<button onclick="acceptGuildQuest('${questId}')">รับเควส</button>`;
+                btnHtml = `<button onclick="acceptGuildQuest('${questId}')" style="width:100%; padding:8px; background:linear-gradient(90deg, #007bff, #0056b3); color:white; border:none; border-radius:5px; cursor:pointer; font-weight:bold;">รับภารกิจนี้</button>`;
             }
 
             listDiv.innerHTML += `
-                <div class="guild-quest">
-                    <h4>${quest.title} (Lv.${quest.requiredLevel} ${quest.requiredClass})</h4>
-                    <p>${quest.description}</p>
-                    ${buttonHtml}
+                <div class="guild-quest" style="background:rgba(255,255,255,0.05); border-left:4px solid #007bff; padding:15px; margin-bottom:10px; border-radius:5px;">
+                    <div style="display:flex; justify-content:space-between;">
+                        <h4 style="margin:0; color:#fff;">${quest.title}</h4>
+                        <span style="font-size:0.8em; background:#333; padding:2px 6px; border-radius:4px; color:#aaa;">Lv.${quest.requiredLevel}+</span>
+                    </div>
+                    <p style="font-style:italic; color:#ccc; margin:10px 0; font-size:0.9em;">"${quest.description}"</p>
+                    <div style="font-size:0.9em; color:#ffeb8a; margin-bottom:10px;">
+                        <strong>🏆 รางวัล:</strong> เลื่อนขั้นอาชีพ
+                    </div>
+                    ${btnHtml}
                 </div>
             `;
             foundQuest = true;
@@ -353,13 +320,62 @@ function loadGuildQuests() {
     }
 
     if (!foundQuest) {
-        listDiv.innerHTML += '<p><em>ไม่มีเควสเลื่อนขั้นสำหรับคุณในตอนนี้</em></p>';
+        listDiv.innerHTML += `
+            <div style="text-align:center; padding:20px; color:#aaa; background:rgba(0,0,0,0.2); border-radius:8px; margin-top:10px;">
+                <p style="margin:0;">ยังไม่มีภารกิจสำหรับ <strong>${playerData.classMain}</strong> (Lv.${playerData.level})</p>
+                <small style="color:#777;">โปรดเก็บเลเวลเพิ่ม หรือรอ DM อัปเดต</small>
+            </div>`;
     }
 }
+function loadColosseumUI() {
+    // 1. เช็คว่าตัวเราลงทะเบียนอยู่ไหม
+    const isRegistered = playerData.location === 'colosseum_lobby';
+    updateColosseumButton(isRegistered);
 
-/**
- * รับเควสเลื่อนขั้น (ข้อ 10)
- */
+    // 2. ดึงรายชื่อคนในล็อบบี้
+    const listEl = document.getElementById('colosseum-player-list');
+    
+    // (ใช้ Listener เดิมจาก roomRef แต่กรองเอาเฉพาะคนที่ location = 'colosseum_lobby')
+    db.ref(`rooms/${roomId}/playersByUid`).on('value', snapshot => {
+        if(document.getElementById('colosseum-panel').classList.contains('hidden')) return;
+        
+        const players = snapshot.val() || {};
+        listEl.innerHTML = '';
+        let count = 0;
+
+        for (const uid in players) {
+            const p = players[uid];
+            if (p.location === 'colosseum_lobby') {
+                count++;
+                const status = p.hp > 0 ? '<span style="color:#00ff00;">(พร้อม)</span>' : '<span style="color:red;">(บาดเจ็บ)</span>';
+                listEl.innerHTML += `<li style="padding: 5px; border-bottom: 1px solid #444;">🛡️ <strong>${p.name}</strong> ${status} <small>Lv.${p.level}</small></li>`;
+            }
+        }
+        if(count === 0) listEl.innerHTML = '<li style="color:#777; text-align:center;">ยังไม่มีใครลงทะเบียน</li>';
+    });
+}
+function toggleColosseumStatus() {
+    const isRegistered = playerData.location === 'colosseum_lobby';
+    const newLocation = isRegistered ? 'city' : 'colosseum_lobby'; // สลับสถานะ
+    
+    playerRef.update({ location: newLocation }).then(() => {
+        updateColosseumButton(!isRegistered);
+        if (!isRegistered) Swal.fire('ลงทะเบียนแล้ว!', 'รอ DM จับคู่ประลอง...', 'success');
+        else Swal.fire('ยกเลิกแล้ว', 'คุณออกจากรายการประลอง', 'info');
+    });
+}
+function updateColosseumButton(isRegistered) {
+    const btn = document.getElementById('btn-join-colosseum');
+    if (btn) {
+        if (isRegistered) {
+            btn.textContent = "❌ ยกเลิกการลงทะเบียน";
+            btn.style.backgroundColor = "#dc3545";
+        } else {
+            btn.textContent = "✅ ลงทะเบียนประลอง";
+            btn.style.backgroundColor = "#28a745";
+        }
+    }
+}
 async function acceptGuildQuest(questId) {
     if (!guildQuests[questId]) return;
     
@@ -434,11 +450,6 @@ async function registerSubClass() {
     }
 }
 
-// =================================================================================
-// 3. Inn Logic (ข้อ 10)
-// [ ⭐️ KONGFA-FIX ⭐️ ] แก้ไขให้เรียกใช้ calculateTotalStat (ฟังก์ชันใหม่)
-// (ส่วนนี้ไม่มีบั๊ก คงเดิม)
-// =================================================================================
 
 function loadInnUI() {
     const btn = document.getElementById('btn-rest');
@@ -506,25 +517,26 @@ async function restAtInn() {
 }
 
 // =================================================================================
-// 4. Shop Logic (ข้อ 10, 11)
-// [ ⭐️ KONGFA-FIX (Bug 5 + New Bug) ⭐️ ]
-// =================================================================================
-
-/**
- * เปิด UI ร้านค้า (ดึงข้อมูลจาก DM)
- */
 async function openShop(shopId) {
-    showBuildingUI('shop_items'); // (แสดง Panel ร้านค้า)
-    const titleEl = document.getElementById('shop-title');
-    const listDiv = document.getElementById('shop-item-list');
+    showBuildingUI('shop_items'); 
     
-    const shopName = document.querySelector(`button[onclick="openShop('${shopId}')"]`).textContent;
-    titleEl.textContent = shopName;
-    listDiv.innerHTML = '<p>กำลังโหลดสินค้า...</p>';
+    const shopNameMap = {
+        'weapon_basic': 'ร้านอาวุธเริ่มต้น',
+        'weapon_common': 'ร้านอาวุธทั่วไป',
+        'weapon_magic': 'ร้านเครื่องมือเวทย์',
+        'weapon_high': 'ร้านอาวุธระดับสูง',
+        'armor': 'ร้านอุปกรณ์/เกราะ',
+        'general': 'ร้านจิปาถะ'
+    };
+    document.getElementById('shop-title').textContent = shopNameMap[shopId] || 'ร้านค้า';
+    
+    const listDiv = document.getElementById('shop-item-list');
+    listDiv.innerHTML = '<p style="text-align:center;">กำลังโหลดสินค้า...</p>';
 
     const currentShopData = shopData[shopId];
+    
     if (!currentShopData || Object.keys(currentShopData).length === 0) {
-        listDiv.innerHTML = '<p><em>ร้านนี้ยังไม่มีสินค้า (รอ DM เพิ่มของ)</em></p>';
+        listDiv.innerHTML = '<p style="text-align:center; color:#aaa; margin-top:20px;"><em>ร้านนี้ของหมด (DM ยังไม่ได้ลงของ)</em></p>';
         return;
     }
 
@@ -535,43 +547,53 @@ async function openShop(shopId) {
         const item = currentShopData[itemId];
         const canBuy = playerGP >= item.price;
         
+        // 1.1 สร้าง HTML แสดงค่าโบนัส (Stats)
         let statsHtml = '';
         if (item.bonuses && Object.keys(item.bonuses).length > 0) {
-            statsHtml += '<ul>';
+            statsHtml += '<div style="font-size:0.85em; color:#00ff00; margin:5px 0;">';
             for (const stat in item.bonuses) {
-                statsHtml += `<li>${stat}: +${item.bonuses[stat]}</li>`;
+                statsHtml += `<span style="margin-right:5px;">⚡ ${stat}+${item.bonuses[stat]}</span>`;
             }
-            statsHtml += '</ul>';
+            statsHtml += '</div>';
         }
 
-        // [ ⭐️ KONGFA-FIX (Bug 5) ⭐️ ] แสดงผล Effects (ถ้ามี)
+        // 1.2 สร้าง HTML แสดงเอฟเฟกต์ (ยา/อาหาร)
         if (item.effects) {
-             statsHtml += '<ul>';
-             if(item.effects.heal) statsHtml += `<li>ฟื้นฟู HP: ${item.effects.heal}</li>`;
-             if(item.effects.permStats) item.effects.permStats.forEach(p => statsHtml += `<li>(ถาวร) ${p.stat}: +${p.amount}</li>`);
-             if(item.effects.tempStats) item.effects.tempStats.forEach(t => statsHtml += `<li>(ชั่วคราว) ${t.stat}: +${t.amount} (${t.turns} เทิร์น)</li>`);
-             statsHtml += '</ul>';
+             statsHtml += '<div style="font-size:0.85em; color:#00bcd4; margin:5px 0;">';
+             if(item.effects.heal) statsHtml += `<div>❤️ ฟื้นฟู: ${item.effects.heal} HP</div>`;
+             if(item.effects.permStats) item.effects.permStats.forEach(p => statsHtml += `<div>💪 ถาวร: ${p.stat} +${p.amount}</div>`);
+             if(item.effects.tempStats) item.effects.tempStats.forEach(t => statsHtml += `<div>⏱️ ชั่วคราว: ${t.stat} +${t.amount} (${t.turns} เทิร์น)</div>`);
+             statsHtml += '</div>';
+        }
+
+        // 1.3 แสดงอาวุธ
+        let weaponInfo = '';
+        if (item.damageDice) {
+            weaponInfo = `<span style="color:#ff6666; font-size:0.9em;">⚔️ Dmg: ${item.damageDice}</span>`;
         }
 
         listDiv.innerHTML += `
-            <div class="shop-item">
-                <h4>${item.name}</h4>
-                <p>ประเภท: ${item.itemType || 'ทั่วไป'}</p>
-                <p>ความทนทาน: ${item.durability || 100}%</p>
+            <div class="shop-item" style="border:1px solid #a97125; background:rgba(0,0,0,0.6); padding:12px; margin-bottom:10px; border-radius:8px; display:flex; flex-direction:column;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h4 style="margin:0; color:#ffd700; font-size:1.1em;">${item.name}</h4>
+                    <span style="color:${canBuy ? '#00ff00' : '#ff4d4d'}; font-weight:bold; font-size:1.1em;">${item.price} GP</span>
+                </div>
+                <div style="font-size:0.85em; color:#ccc; margin-top:2px;">
+                    ${item.itemType || 'ทั่วไป'} ${weaponInfo} | ทนทาน: ${item.durability || 100}%
+                </div>
+                
                 ${statsHtml}
-                <p class="price">${item.price} GP</p>
-                <button onclick="buyItem('${shopId}', '${itemId}')" ${canBuy ? '' : 'disabled'}>
-                    ${canBuy ? 'ซื้อ' : 'เงินไม่พอ'}
+                
+                <button onclick="buyItem('${shopId}', '${itemId}')" 
+                    style="margin-top:8px; width:100%; padding:8px; border:none; border-radius:5px; color:white; font-weight:bold; cursor:${canBuy ? 'pointer' : 'not-allowed'}; background-color:${canBuy ? '#28a745' : '#555'};" 
+                    ${canBuy ? '' : 'disabled'}>
+                    ${canBuy ? '🛒 ซื้อสินค้า' : '❌ เงินไม่พอ'}
                 </button>
             </div>
         `;
     }
 }
 
-/**
- * ซื้อไอเทม (ข้อ 11)
- * [ ⭐️ KONGFA-FIX (Bug 5 + New Bug) ⭐️ ]
- */
 async function buyItem(shopId, itemId) {
     const item = shopData[shopId]?.[itemId];
     if (!item) return Swal.fire('ผิดพลาด', 'ไม่พบไอเทมนี้ในร้านค้า!', 'error');

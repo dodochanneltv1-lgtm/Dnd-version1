@@ -194,14 +194,90 @@ async function unequipItem(slot) {
 /* จบเทิร์นผู้เล่น */
 async function endPlayerTurn(uid, roomId) {
     try {
-        const combatSnap = await db.ref(`rooms/${roomId}/combat`).get();
-        if (combatSnap.exists() && combatSnap.val().isActive) {
-            const currentCombatState = combatSnap.val();
-            if (currentCombatState.turnOrder && currentCombatState.turnOrder[currentCombatState.currentTurnIndex].id === uid) {
-                await db.ref(`rooms/${roomId}/combat/actionComplete`).set(uid);
-            } 
-        } 
+        // ❌ เดิม: ส่งสัญญาณไปให้ DM ทำงาน (ถ้า DM ไม่อยู่คือค้าง)
+        // await db.ref(`rooms/${roomId}/combat/actionComplete`).set(uid);
+        
+        // ✅ ใหม่: สั่งเปลี่ยนเทิร์นเองเลย
+        await advanceCombatTurn(roomId);
+        
     } catch (error) { console.error(error); }
+}
+async function advanceCombatTurn(roomId) {
+    const combatRef = db.ref(`rooms/${roomId}/combat`);
+    const snapshot = await combatRef.get();
+    const combatState = snapshot.val();
+
+    if (!combatState || !combatState.isActive) return;
+
+    // 1. หาคนถัดไป (ข้ามคนที่ตาย)
+    let nextIndex = (combatState.currentTurnIndex + 1) % combatState.turnOrder.length;
+    const maxSkips = combatState.turnOrder.length;
+    let skips = 0;
+
+    // ดึงข้อมูล HP ล่าสุดมาเช็คว่าใครตายบ้าง
+    const playersSnap = await db.ref(`rooms/${roomId}/playersByUid`).get();
+    const enemiesSnap = await db.ref(`rooms/${roomId}/enemies`).get();
+    const playersData = playersSnap.val() || {};
+    const enemiesData = enemiesSnap.val() || {};
+
+    while (skips < maxSkips) {
+        const nextUnit = combatState.turnOrder[nextIndex];
+        let isDead = false;
+
+        if (nextUnit.type === 'player') {
+            isDead = (playersData[nextUnit.id]?.hp || 0) <= 0;
+        } else if (nextUnit.type === 'enemy') {
+            isDead = (enemiesData[nextUnit.id]?.hp || 0) <= 0;
+        }
+
+        if (isDead) {
+            nextIndex = (nextIndex + 1) % combatState.turnOrder.length;
+            skips++;
+        } else {
+            break; // เจอคนเป็นแล้ว
+        }
+    }
+
+    if (skips === maxSkips) {
+        // ทุกคนตายหมด? (จบการต่อสู้)
+        await db.ref(`rooms/${roomId}/combat`).remove();
+        return;
+    }
+
+    // 2. ลดคูลดาวน์/บัฟ ของคนถัดไป (Next Unit Logic)
+    const nextUnit = combatState.turnOrder[nextIndex];
+    let unitRef;
+    if (nextUnit.type === 'player') unitRef = db.ref(`rooms/${roomId}/playersByUid/${nextUnit.id}`);
+    else unitRef = db.ref(`rooms/${roomId}/enemies/${nextUnit.id}`);
+
+    if (unitRef) {
+        await unitRef.transaction(unitData => {
+            if (!unitData) return unitData;
+            
+            // ลดเทิร์นบัฟ
+            if (Array.isArray(unitData.activeEffects)) {
+                unitData.activeEffects.forEach(effect => {
+                    if (effect.turnsLeft > 0) effect.turnsLeft--;
+                });
+                // ลบบัฟที่หมดเวลา
+                unitData.activeEffects = unitData.activeEffects.filter(effect => effect.turnsLeft > 0);
+            }
+            // ลดคูลดาวน์สกิล (PERSONAL)
+            if (unitData.skillCooldowns) {
+                for (const skillId in unitData.skillCooldowns) {
+                    const cd = unitData.skillCooldowns[skillId];
+                    if (cd && cd.type === 'PERSONAL' && cd.turnsLeft > 0) {
+                        cd.turnsLeft--;
+                        if (cd.turnsLeft === 0) unitData.skillCooldowns[skillId] = null;
+                    }
+                }
+            }
+            return unitData;
+        });
+    }
+
+    // 3. อัปเดต Index เพื่อเปลี่ยนเทิร์นจริง
+    await combatRef.child('currentTurnIndex').set(nextIndex);
 }
 
 function checkCooldown(casterData, skill) {
@@ -760,138 +836,241 @@ async function selectSkillTarget(skillId) {
 /* ทำการทอยโจมตี (Perform Attack Roll) */
 async function performAttackRoll() {
     const uid = firebase.auth().currentUser?.uid; 
-    if (!uid || !combatState || !combatState.isActive || combatState.turnOrder[combatState.currentTurnIndex].id !== uid) return showAlert("ยังไม่ถึงเทิร์นของคุณ!", 'warning');
     
-    const selectedEnemyKey = document.getElementById('enemyTargetSelect').value; 
-    if (!selectedEnemyKey) return showAlert("กรุณาเลือกเป้าหมาย!", 'warning'); 
+    // เช็คเทิร์น
+    if (!uid || !combatState || !combatState.isActive || combatState.turnOrder[combatState.currentTurnIndex].id !== uid) {
+        return showAlert("ยังไม่ถึงเทิร์นของคุณ!", 'warning');
+    }
+    
+    const selectedTargetKey = document.getElementById('enemyTargetSelect').value; 
+    if (!selectedTargetKey) return showAlert("กรุณาเลือกเป้าหมาย!", 'warning'); 
     
     const roomId = sessionStorage.getItem('roomId');
-    const enemyData = allEnemiesInRoom[selectedEnemyKey];
+    
+    // [Logic PvP] เลือกข้อมูลเป้าหมายให้ถูกประเภท
+    let targetData;
+    if (combatState.type === 'PVP') {
+        targetData = allPlayersInRoom[selectedTargetKey]; // เป้าหมายคือผู้เล่น
+    } else {
+        targetData = allEnemiesInRoom[selectedTargetKey]; // เป้าหมายคือมอนสเตอร์
+    }
+    
     const playerData = currentCharacterData; 
-    if (!enemyData || !playerData) return showAlert("ไม่พบข้อมูลเป้าหมายหรือผู้เล่น!", 'error');
+    if (!targetData || !playerData) return showAlert("ไม่พบข้อมูลเป้าหมายหรือผู้เล่น!", 'error');
 
+    // ปิดปุ่มชั่วคราว
     document.getElementById('attackRollButton').disabled = true; 
     document.getElementById('skillButton').disabled = true;
 
+    // เลื่อนจอไปที่ลูกเต๋า
     const animArea = document.getElementById('player-dice-animation-area');
     if(animArea) animArea.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
+    // เริ่มทอยเต๋า D20
     const { total: roll } = await showDiceRollAnimation(1, 20, 'player-dice-animation-area', 'dice-result', null);
 
-    const enemyAC = 10 + Math.floor(((enemyData.stats?.DEX || 10) - 10) / 2); 
+    // [Logic PvP] คำนวณ AC เป้าหมาย
+    let targetAC;
+    if (combatState.type === 'PVP') {
+        // สูตร AC ผู้เล่น: 10 + (DEX - 10)/2
+        targetAC = 10 + getStatBonusFn(calculateTotalStat(targetData, 'DEX'));
+    } else {
+        // สูตร AC มอนสเตอร์
+        targetAC = 10 + Math.floor(((targetData.stats?.DEX || 10) - 10) / 2);
+    }
+
+    // คำนวณ Attack Bonus ของเรา
     const mainWeapon = playerData.equippedItems?.mainHand;
     let attackStat = 'STR';
+    // เช็คอาวุธที่ใช้ DEX (มีด, ธนู, หน้าไม้)
     if (mainWeapon && (
         (mainWeapon.weaponType === 'มีด' && (playerData.classMain === 'โจร' || playerData.classMain === 'นักฆ่า')) ||
-        (mainWeapon.weaponType === 'ธนู' && (playerData.classMain === 'เรนเจอร์' || playerData.classMain === 'อาเชอร์'))
+        (mainWeapon.weaponType === 'ธนู' && (playerData.classMain === 'เรนเจอร์' || playerData.classMain === 'อาเชอร์')) ||
+        (mainWeapon.weaponType === 'หน้าไม้')
     )) { attackStat = 'DEX'; }
     
     const attackBonus = getStatBonus(calculateTotalStat(playerData, attackStat));
     const totalAttack = roll + attackBonus;
     
-    document.getElementById('rollResultCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // แสดงผลลัพธ์ (Card)
     const resultCard = document.getElementById('rollResultCard'); 
     resultCard.classList.remove('hidden'); 
-    const outcomeText = totalAttack >= enemyAC ? '✅ โจมตีโดน!' : '💥 โจมตีพลาด!';
+    resultCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    const isHit = totalAttack >= targetAC;
+    const outcomeText = isHit ? '✅ โจมตีโดน!' : '💥 โจมตีพลาด!';
     let rollText = `ทอย (d20): ${roll} + ${attackStat} Bonus: ${attackBonus} = <strong>${totalAttack}</strong>`;
     
-    resultCard.innerHTML = `<h4>ผลการโจมตี: ${enemyData.name}</h4><p>${rollText}</p><p>AC ศัตรู: ${enemyAC}</p><p class="outcome">${outcomeText}</p>`; 
-    resultCard.className = `result-card ${totalAttack >= enemyAC ? 'hit' : 'miss'}`;
+    resultCard.innerHTML = `<h4>ผลการโจมตี: ${targetData.name}</h4><p>${rollText}</p><p>AC เป้าหมาย: ${targetAC}</p><p class="outcome">${outcomeText}</p>`; 
+    resultCard.className = `result-card ${isHit ? 'hit' : 'miss'}`;
     
-    if (totalAttack >= enemyAC) { 
+    if (isHit) { 
+        // ถ้าโดน -> เปิดปุ่มทอย Damage
         document.getElementById('damageWeaponName').textContent = mainWeapon?.name || "มือเปล่า"; 
         document.getElementById('damageDiceInfo').textContent = mainWeapon?.damageDice || "d4"; 
-        document.getElementById('damageRollSection').style.display = 'block'; 
+
+        const damageSection = document.getElementById('damageRollSection');
+
+        damageSection.setAttribute('data-attack-val', totalAttack);
+        damageSection.style.display = 'block';
     } else { 
-        setTimeout(async () => { await endPlayerTurn(uid, roomId); resultCard.classList.add('hidden'); }, 2000); 
+        // ถ้าพลาด -> จบเทิร์นอัตโนมัติ
+        setTimeout(async () => { 
+            await endPlayerTurn(uid, roomId); 
+            resultCard.classList.add('hidden'); 
+        }, 2000); 
     }
 }
-
-/**
- * [ย้ายมา] คำนวณความเสียหาย
- */
 async function performDamageRoll() {
     const uid = firebase.auth().currentUser?.uid; 
     const roomId = sessionStorage.getItem('roomId'); 
-    const selectedEnemyKey = document.getElementById('enemyTargetSelect').value; 
-    if (!uid || !roomId || !selectedEnemyKey) return;
+    const selectedTargetKey = document.getElementById('enemyTargetSelect').value; 
     
+    // Check Data
+    if (!uid || !roomId || !selectedTargetKey) return;
+    
+    // ซ่อนปุ่มทอยดาเมจหลังจากกดแล้ว
     document.getElementById('damageRollSection').style.display = 'none';
     
-    const enemyRef = db.ref(`rooms/${roomId}/enemies/${selectedEnemyKey}`); 
+    // [Logic PvP] เลือก Ref เป้าหมายให้ถูก (คน หรือ มอนสเตอร์)
+    let targetRef;
+    if (combatState.type === 'PVP') {
+        targetRef = db.ref(`rooms/${roomId}/playersByUid/${selectedTargetKey}`);
+    } else {
+        targetRef = db.ref(`rooms/${roomId}/enemies/${selectedTargetKey}`);
+    }
+    
     const playerRef = db.ref(`rooms/${roomId}/playersByUid/${uid}`); 
     
-    const enemySnapshot = await enemyRef.get(); 
+    // ดึงข้อมูลล่าสุด
+    const targetSnapshot = await targetRef.get(); 
     const playerSnapshot = await playerRef.get(); 
     
-    if (!enemySnapshot.exists() || !playerSnapshot.exists()) return; 
+    if (!targetSnapshot.exists() || !playerSnapshot.exists()) return; 
     
-    const enemyData = enemySnapshot.val();
+    const targetData = targetSnapshot.val();
     let playerData = playerSnapshot.val(); 
     
     const mainWeapon = playerData.equippedItems?.mainHand;
 
-    // Durability
+    // =========================================================
+    // ส่วนที่ 1: ระบบความทนทาน (Durability System)
+    // =========================================================
     if (mainWeapon) {
         const newDurability = (mainWeapon.durability || 100) - 1;
+        
         if (newDurability <= 0) {
+            // กรณีอาวุธพัง
             showAlert(`อาวุธ [${mainWeapon.name}] พัง!`, 'error');
-            const updates = {}; updates[`equippedItems/mainHand`] = null;
+            
+            const updates = {}; 
+            updates[`equippedItems/mainHand`] = null; // ถอดออกจากตัว
+            
+            // สร้างไอเทมพังเพื่อคืนเข้ากระเป๋า
             const itemToReturn = { ...mainWeapon, durability: 0, quantity: 1 };
-            delete itemToReturn.isProficient; delete itemToReturn.isOffHand;
+            delete itemToReturn.isProficient; 
+            delete itemToReturn.isOffHand;
+            
             let inventory = playerData.inventory || [];
+            // เช็คว่ามีซากเดิมอยู่ไหม จะได้ stack
             const existingIdx = inventory.findIndex(i => i.name === itemToReturn.name && i.durability === 0);
-            if(existingIdx > -1) inventory[existingIdx].quantity++; else inventory.push(itemToReturn);
+            
+            if(existingIdx > -1) inventory[existingIdx].quantity++; 
+            else inventory.push(itemToReturn);
+            
             updates[`inventory`] = inventory;
+            
             await playerRef.update(updates);
-            await endPlayerTurn(uid, roomId); document.getElementById('rollResultCard').classList.add('hidden');
+            
+            // จบเทิร์นทันทีเพราะอาวุธพังโจมตีต่อไม่ได้
+            await endPlayerTurn(uid, roomId); 
+            document.getElementById('rollResultCard').classList.add('hidden');
             return; 
         } else {
+            // ลดความทนทานปกติ
             await playerRef.child('equippedItems/mainHand/durability').set(newDurability);
             playerData.equippedItems.mainHand.durability = newDurability;
         }
     }
 
+    // =========================================================
+    // ส่วนที่ 2: คำนวณความเสียหาย (Damage Calculation)
+    // =========================================================
+    
     const diceTypeString = mainWeapon?.damageDice || 'd4';
     const diceType = parseInt(diceTypeString.replace('d', ''));
+    
+    // เลื่อนจอไปหาลูกเต๋า
     const animArea = document.getElementById('player-dice-animation-area');
     if(animArea) animArea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    // เริ่มอนิเมชันทอยเต๋า
     const { total: damageRoll } = await showDiceRollAnimation(1, diceType, 'player-dice-animation-area', 'dice-result', null);
 
+    // เลือก Stat ที่ใช้คำนวณ (STR หรือ DEX)
     let damageStat = 'STR';
-    if (mainWeapon && ( (mainWeapon.weaponType === 'มีด' && (playerData.classMain === 'โจร' || playerData.classMain === 'นักฆ่า')) || (mainWeapon.weaponType === 'ธนู' && (playerData.classMain === 'เรนเจอร์' || playerData.classMain === 'อาเชอร์')) )) damageStat = 'DEX';
+    if (mainWeapon && ( 
+        (mainWeapon.weaponType === 'มีด' && (playerData.classMain === 'โจร' || playerData.classMain === 'นักฆ่า')) || 
+        (mainWeapon.weaponType === 'ธนู' && (playerData.classMain === 'เรนเจอร์' || playerData.classMain === 'อาเชอร์')) ||
+        (mainWeapon.weaponType === 'หน้าไม้')
+    )) damageStat = 'DEX';
     
     let damageBonus = getStatBonus(calculateTotalStat(playerData, damageStat));
+    
+    // ความเสียหายพื้นฐาน
     let totalDamage = Math.max(1, damageRoll + damageBonus);
     let damageExplanation = `ทอย (${diceTypeString}): ${damageRoll} + ${damageStat} Bonus: ${damageBonus}`;
     
+    // --- ตรวจสอบ Passive พิเศษ (Override Formula) ---
     const formulaOverrideEffect = (playerData.activeEffects || []).find(e => e.stat === 'WeaponAttack' && e.modType === 'FORMULA' && e.buffId);
     let formulaPassive = null;
-    if (playerData.classMain && SKILL_DATA[playerData.classMain]) formulaPassive = SKILL_DATA[playerData.classMain].find(s => s.skillTrigger === 'PASSIVE' && s.effect?.type === 'FORMULA_ATTACK_OVERRIDE');
-    if (!formulaPassive && playerData.classSub && SKILL_DATA[playerData.classSub]) formulaPassive = SKILL_DATA[playerData.classSub].find(s => s.skillTrigger === 'PASSIVE' && s.effect?.type === 'FORMULA_ATTACK_OVERRIDE');
+    
+    // เช็ค Passive จากอาชีพหลัก/รอง
+    if (playerData.classMain && SKILL_DATA[playerData.classMain]) {
+        formulaPassive = SKILL_DATA[playerData.classMain].find(s => s.skillTrigger === 'PASSIVE' && s.effect?.type === 'FORMULA_ATTACK_OVERRIDE');
+    }
+    if (!formulaPassive && playerData.classSub && SKILL_DATA[playerData.classSub]) {
+        formulaPassive = SKILL_DATA[playerData.classSub].find(s => s.skillTrigger === 'PASSIVE' && s.effect?.type === 'FORMULA_ATTACK_OVERRIDE');
+    }
 
     const formulaSource = formulaOverrideEffect || (formulaPassive ? formulaPassive.effect : null);
 
+    // ถ้ามีสูตรพิเศษ (เช่น ดาบเวทย์, ตีเป็น %HP) ให้คำนวณใหม่
     if (formulaSource) {
         const formulaId = formulaSource.buffId || formulaSource.formula;
-        const targetCurrentHp = enemyData.hp || 0;
+        const targetCurrentHp = targetData.hp || 0;
         const intBonus = getStatBonus(calculateTotalStat(playerData, 'INT'));
         const wisBonus = getStatBonus(calculateTotalStat(playerData, 'WIS'));
         const strBonus = getStatBonus(calculateTotalStat(playerData, 'STR'));
         
-        // Updated Balanced Formulas (v3.5)
         switch (formulaId) {
-            case 'HOLY_LIGHT_FORMULA_ATTACK': totalDamage = (damageRoll + damageBonus) + Math.floor(targetCurrentHp * 0.05); damageExplanation = `[ดาบแห่งแสง] Base + 5%HP`; break;
-            case 'MAGE_PASSIVE_V1': totalDamage = (damageRoll + intBonus) + Math.floor(targetCurrentHp * 0.03); damageExplanation = `[เวทย์ติดตัว] Base + 3%HP`; break;
+            case 'HOLY_LIGHT_FORMULA_ATTACK': 
+                totalDamage = (damageRoll + damageBonus) + Math.floor(targetCurrentHp * 0.05); 
+                damageExplanation = `[ดาบแห่งแสง] Base + 5%HP`; 
+                break;
+            case 'MAGE_PASSIVE_V1': 
+                totalDamage = (damageRoll + intBonus) + Math.floor(targetCurrentHp * 0.03); 
+                damageExplanation = `[เวทย์ติดตัว] Base + 3%HP`; 
+                break;
             case 'MAGE_PASSIVE_V2': totalDamage = (damageRoll + intBonus + wisBonus) + Math.floor(targetCurrentHp * 0.05); break;
             case 'MAGE_PASSIVE_V3': totalDamage = (damageRoll + intBonus + wisBonus) + Math.floor(targetCurrentHp * 0.08); break;
             case 'MAGE_PASSIVE_V4': totalDamage = (damageRoll + intBonus + wisBonus) + Math.floor(targetCurrentHp * 0.10); break;
+            
             case 'MS_RUNE_BLADE_V1': totalDamage = (damageRoll + intBonus) + Math.floor(targetCurrentHp * 0.05); break;
             case 'MS_ARCANE_SLASH_V1': totalDamage = (damageRoll + strBonus + intBonus) + Math.floor(targetCurrentHp * 0.08); break;
             case 'MS_ARCANE_SLASH_V2': totalDamage = (damageRoll + strBonus + intBonus) + Math.floor(targetCurrentHp * 0.10); break;
             case 'MS_ARCANE_SLASH_V3': totalDamage = (damageRoll + strBonus + intBonus) + Math.floor(targetCurrentHp * 0.12); break;
-            case 'DL_PASSIVE_V1': const demonStatBonus = Math.max(strBonus, intBonus); totalDamage = (damageRoll + demonStatBonus) + Math.floor(targetCurrentHp * 0.10); break;
-            case 'HOLY_LADY_JUDGMENT': totalDamage = Math.floor(targetCurrentHp * 0.50); damageExplanation = `[การพิพากษา] 50% ของเลือดปัจจุบัน`; break;
+            
+            case 'DL_PASSIVE_V1': 
+                const demonStatBonus = Math.max(strBonus, intBonus); 
+                totalDamage = (damageRoll + demonStatBonus) + Math.floor(targetCurrentHp * 0.10); 
+                break;
+            
+            case 'HOLY_LADY_JUDGMENT': 
+                totalDamage = Math.floor(targetCurrentHp * 0.50); 
+                damageExplanation = `[การพิพากษา] 50% ของเลือดปัจจุบัน`; 
+                break;
+                
             case 'BOW_MASTER_EXECUTE': 
                 const dex = getStatBonus(calculateTotalStat(playerData, 'DEX'));
                 const wis = getStatBonus(calculateTotalStat(playerData, 'WIS'));
@@ -901,19 +1080,49 @@ async function performDamageRoll() {
                 damageExplanation = `[เนตรสังหาร] Base + ${percent}%HP`;
                 break;
         }
+        // ดาเมจต้องไม่ต่ำกว่า 1
         totalDamage = Math.max(1, totalDamage);
     }
 
-    document.getElementById('rollResultCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // แสดงการ์ดผลลัพธ์
     const resultCard = document.getElementById('rollResultCard'); 
-    resultCard.innerHTML = `<h4>ผลความเสียหาย: ${enemyData.name}</h4><p>${damageExplanation} = <strong>${totalDamage}</strong></p><p class="outcome">🔥 สร้างความเสียหาย ${totalDamage} หน่วย! 🔥</p>`; 
+    resultCard.innerHTML = `<h4>ผลความเสียหาย: ${targetData.name}</h4><p>${damageExplanation} = <strong>${totalDamage}</strong></p><p class="outcome">🔥 สร้างความเสียหาย ${totalDamage} หน่วย! 🔥</p>`; 
     resultCard.className = 'result-card hit';
+    resultCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
     
-    const newHp = (enemyData.hp || 0) - totalDamage;
-    setTimeout(async () => {
-        const finalHp = Math.max(0, newHp);
-        await enemyRef.child('hp').set(finalHp);
-        await endPlayerTurn(uid, roomId);
-        resultCard.classList.add('hidden');
-    }, 2500); 
+    // =========================================================
+    // ส่วนที่ 3: ส่งข้อมูล (PvP vs PvE)
+    // =========================================================
+    
+    if (combatState.type === 'PVP') {
+        // ⭐ [PvP] ดึงค่า Attack Roll จริงๆ ที่ฝากไว้ใน attribute
+        let realAttackRoll = parseInt(document.getElementById('damageRollSection').getAttribute('data-attack-val'));
+        
+        // (กันเหนียว: ถ้าหาไม่เจอ ให้ใช้ค่ากลางๆ เพื่อให้ระบบไม่พัง)
+        if (isNaN(realAttackRoll)) realAttackRoll = 15;
+
+        const pendingAttackData = {
+            attackerKey: uid,
+            attackerName: playerData.name,
+            attackRollValue: realAttackRoll, // ใช้ค่าจริงที่ดึงมา
+            initialDamage: totalDamage,
+            isPvP: true 
+        };
+
+        // ส่งข้อมูลไปให้ฝ่ายตรงข้าม
+        await targetRef.child('pendingAttack').set(pendingAttackData);
+        
+        // แจ้งเตือนฝั่งคนตี
+        resultCard.innerHTML += `<p style="color:#ffc107; font-size:0.9em; margin-top:5px;">⏳ รอฝ่ายตรงข้ามตอบสนอง...</p>`;
+        
+    } else {
+        // ⭐ [PvE] ตีมอนสเตอร์ (ตัดเลือดเลย)
+        const newHp = (targetData.hp || 0) - totalDamage;
+        setTimeout(async () => {
+            const finalHp = Math.max(0, newHp);
+            await targetRef.child('hp').set(finalHp);
+            await endPlayerTurn(uid, roomId);
+            resultCard.classList.add('hidden');
+        }, 2500); 
+    }
 }

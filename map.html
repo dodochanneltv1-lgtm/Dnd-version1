@@ -167,8 +167,24 @@
                 <h2>🏙️ แผนที่ภายในเมือง</h2>
                 <button onclick="showMapUI('building')">ไปย่านอาคาร (กิลด์/ร้านค้า)</button>
                 <button onclick="showMapUI('world')">เดินทางออกนอกเมือง</button>
-                <button style="background-color: #6c757d;" disabled>โคลอสเซียม</button>
+                <button onclick="showBuildingUI('colosseum')" style="background: linear-gradient(90deg, #d63031, #b71540);">⚔️ โคลอสเซียม (PvP)</button>
                 <button onclick="hideMapUI()">ปิดแผนที่</button>
+            </div>
+
+            <div id="colosseum-panel" class="colosseum-panel hidden">
+                <h2 style="color: #ff4d4d; border-color: #ff4d4d;">⚔️ โคลอสเซียม</h2>
+                <p style="text-align: center; color: #ccc;">สถานที่สำหรับผู้กล้าที่ต้องการประลองฝีมือ</p>
+                
+                <div style="background: rgba(0,0,0,0.4); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <h4 style="margin-top: 0; color: #ffeb8a;">รายชื่อผู้รอประลอง</h4>
+                    <ul id="colosseum-player-list" style="list-style: none; padding: 0; min-height: 50px;">
+                        <li>กำลังโหลด...</li>
+                    </ul>
+                </div>
+
+                <button id="btn-join-colosseum" onclick="toggleColosseumStatus()" style="background-color: #28a745;">ลงทะเบียนประลอง</button>
+                <hr>
+                <button onclick="showMapUI('city')">ออกจากโคลอสเซียม</button>
             </div>
 
             <!-- 2.1.3 ระดับ 3: ภายในอาคาร -->
@@ -234,10 +250,8 @@
                 <button onclick="showBuildingUI('shops')">กลับไปย่านร้านค้า</button>
             </div>
 
-        </div> <!-- #map-ui-container -->
+        </div>
 
-
-        <!-- 2.2 Iframe แดชบอร์ด (อยู่ด้านล่างสุด) (ข้อ 5) -->
         <div id="dashboard-iframe-container">
             <iframe id="dashboard-iframe" src="player-dashboard.html"></iframe>
         </div>

@@ -4,6 +4,7 @@ let allEnemies = {};
 let combatState = {};
 let previousPlayerHps = {};
 let previousEnemyHps = {};
+let currentShopListener = null;
 
 // Consts
 const ALL_CLASSES = (typeof CLASS_DATA !== 'undefined') ? Object.keys(CLASS_DATA) : [];
@@ -314,18 +315,49 @@ function displayPlayerSummary(player) {
     }
     const levelDisplay = tempLevel > 0 ? `${permanentLevel} <span style="color: #00ff00;">(+${tempLevel})</span>` : permanentLevel;
     htmlContent += `<p><strong>ระดับ (Level):</strong> ${levelDisplay}</p>`;
-    
-    htmlContent += `<p><strong>EXP:</strong> ${player.exp || 0} / ${player.expToNextLevel || 300}</p>`;
     htmlContent += `<p><strong>GP:</strong> ${player.gp || 0}</p><hr>`;
     
     const hpColor = currentHp <= 0 ? 'red' : 'inherit';
     const hpText = currentHp <= 0 ? 'เสียชีวิต (0)' : currentHp;
     htmlContent += `<p style="color:${hpColor}; font-weight:bold;"><strong>HP:</strong> ${hpText} / ${maxHpNew}</p>`;
     
+    // แสดง Stats
+    htmlContent += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:5px; margin-bottom:10px;">`;
     for (const stat of ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA']) {
-        htmlContent += `<p><strong>${stat}:</strong> ${calculateTotalStat(player, stat)}</p>`;
+        const val = calculateTotalStat(player, stat);
+        htmlContent += `<div><strong>${stat}:</strong> ${val}</div>`;
     }
-    
+    htmlContent += `</div>`;
+
+    // --- [เพิ่ม] แสดงอุปกรณ์สวมใส่ ---
+    htmlContent += `<hr><h4>🛡️ อุปกรณ์สวมใส่</h4><ul style="font-size: 0.9em; padding-left: 20px;">`;
+    const slots = { mainHand: 'มือหลัก', offHand: 'มือรอง', head: 'หัว', chest: 'ตัว', legs: 'ขา', feet: 'เท้า' };
+    let hasEquip = false;
+    if (player.equippedItems) {
+        for (const [key, label] of Object.entries(slots)) {
+            const item = player.equippedItems[key];
+            if (item) {
+                hasEquip = true;
+                const duraText = item.durability !== undefined ? ` [${item.durability}%]` : '';
+                htmlContent += `<li><strong>${label}:</strong> ${item.name}${duraText}</li>`;
+            }
+        }
+    }
+    if (!hasEquip) htmlContent += `<li><em>ตัวเปล่า</em></li>`;
+    htmlContent += `</ul>`;
+
+    // --- [เพิ่ม] แสดงกระเป๋า ---
+    htmlContent += `<hr><h4>🎒 กระเป๋า</h4><ul style="font-size: 0.9em; padding-left: 20px; max-height: 100px; overflow-y: auto;">`;
+    if (player.inventory && player.inventory.length > 0) {
+        player.inventory.forEach(item => {
+            htmlContent += `<li>${item.name} (x${item.quantity})</li>`;
+        });
+    } else {
+        htmlContent += `<li><em>กระเป๋าว่างเปล่า</em></li>`;
+    }
+    htmlContent += `</ul>`;
+
+    // แสดง Active Effects (เดิม)
     const effects = player.activeEffects || [];
     if(effects.length > 0) {
         htmlContent += `<hr><h4>Active Effects:</h4><ul>`;
@@ -338,16 +370,12 @@ function displayPlayerSummary(player) {
 
     if (player.quest && player.quest.title) {
         htmlContent += `<div style="border: 1px solid #ffc107; padding: 10px; margin-top: 15px; border-radius: 5px; background-color: #ffc1071a;">
-                                <h4>📜 เควสปัจจุบัน: ${player.quest.title}</h4>
-                                <p style="font-size: small;"><strong>รายละเอียด:</strong> ${player.quest.detail || '-'}</p>
-                                <p style="font-size: small;"><strong>รางวัล:</strong> ${player.quest.reward || '-'}</p>
-                                <p style="font-size: small;"><strong>รางวัล EXP:</strong> ${player.quest.expReward || 0}</p>
-                                <button onclick="completeQuest()" style="background-color: #28a745; width: 49%;">🏆 สำเร็จเควส</button>
-                                <button onclick="cancelQuest()" style="background-color: #dc3545; width: 49%; margin-left: 2%;">❌ ยกเลิกเควส</button>
-                            </div>`;
-    } else {
-        htmlContent += `<p style="margin-top: 10px; color: #777;"><em>ผู้เล่นนี้ยังไม่มีเควส</em></p>`;
+            <h4>📜 เควสปัจจุบัน: ${player.quest.title}</h4>
+            <button onclick="completeQuest()" style="background-color: #28a745; width: 49%;">🏆 สำเร็จ</button>
+            <button onclick="cancelQuest()" style="background-color: #dc3545; width: 49%; margin-left: 2%;">❌ ยกเลิก</button>
+        </div>`;
     }
+    
     output.innerHTML = htmlContent;
 }
 
@@ -1210,7 +1238,7 @@ async function addCustomEnemy() {
   const cha = parseInt(document.getElementById("customEnemyCha").value) || 10;
   const damageDice = document.getElementById("customEnemyDamageDice").value.trim() || "d6";
   
-  const canDefend = document.getElementById("customEnemyCanDefend").checked;
+  
   
   if (!name || hp <= 0) return showCustomAlert("กรุณาใส่ชื่อและ HP ให้ครบถ้วน!", "warning");
   const enemyData = { 
@@ -1219,7 +1247,6 @@ async function addCustomEnemy() {
       type: "enemy", 
       targetUid: document.getElementById('enemyInitialTarget').value, 
       createdAt: Date.now(),
-      abilities: { canDefend: canDefend } 
   };
   try {
     await db.ref(`rooms/${roomId}/enemies`).push(enemyData);
@@ -1435,6 +1462,141 @@ async function addGuildQuestToDB() {
     }
 }
 
+function monitorShopItems() {
+    const roomId = sessionStorage.getItem('roomId');
+    const shopId = document.getElementById("shopIdSelect").value;
+    const listDiv = document.getElementById("currentShopItemsList");
+    const countSpan = document.getElementById("shopItemCount");
+    
+    if (!roomId || !shopId) return;
+
+    // 1. ปิด Listener เก่าก่อน (ถ้ามี) เพื่อไม่ให้ทำงานซ้ำซ้อน
+    if (currentShopListener) {
+        db.ref(`rooms/${roomId}/shops/${currentShopListener}`).off();
+    }
+    currentShopListener = shopId;
+
+    // 2. สร้าง Listener ใหม่สำหรับร้านที่เลือก
+    db.ref(`rooms/${roomId}/shops/${shopId}`).on('value', (snapshot) => {
+        const items = snapshot.val() || {};
+        const itemCount = Object.keys(items).length;
+        
+        // อัปเดตตัวเลขจำนวนสินค้า
+        if(countSpan) countSpan.textContent = itemCount;
+        
+        if (itemCount === 0) {
+            listDiv.innerHTML = '<p style="color:#aaa; text-align:center;">ไม่มีสินค้าในร้านนี้</p>';
+            return;
+        }
+
+        let html = '<ul style="list-style: none; padding: 0; margin: 0;">';
+        for (const key in items) {
+            const item = items[key];
+            const stats = item.bonuses ? Object.keys(item.bonuses).join(',') : '-';
+            
+            html += `
+                <li style="border-bottom: 1px solid #444; padding: 8px 0; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong style="color: #ffeb8a;">${item.name}</strong> 
+                        <span style="color: #28a745;">(${item.price} GP)</span>
+                        <div style="font-size: 0.8em; color: #bbb;">Type: ${item.itemType} | Stat: ${stats}</div>
+                    </div>
+                    <button onclick="deleteShopItem('${shopId}', '${key}', '${item.name}')" 
+                        style="width: auto; padding: 4px 10px; font-size: 0.8em; background-color: #dc3545; border: none; border-radius: 4px; color: white; cursor: pointer;">
+                        ลบ
+                    </button>
+                </li>
+            `;
+        }
+        html += '</ul>';
+        listDiv.innerHTML = html;
+    });
+}
+function deleteShopItem(shopId, itemId, itemName) {
+    const roomId = sessionStorage.getItem('roomId');
+    
+    Swal.fire({
+        title: 'ลบสินค้า?',
+        text: `ต้องการลบ "${itemName}" ออกจากร้านค้าใช่หรือไม่?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'ลบเลย',
+        confirmButtonColor: '#d33',
+        cancelButtonText: 'ยกเลิก'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            db.ref(`rooms/${roomId}/shops/${shopId}/${itemId}`).remove()
+                .then(() => {
+                    // ไม่ต้อง Alert ก็ได้ เพราะรายการจะหายไปเองแบบ Realtime
+                    const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
+                    Toast.fire({ icon: 'success', title: 'ลบเรียบร้อย' });
+                })
+                .catch(err => Swal.fire('Error', err.message, 'error'));
+        }
+    });
+}
+
+function monitorGuildQuests() {
+    const roomId = sessionStorage.getItem('roomId');
+    const listDiv = document.getElementById("currentGuildQuestsList");
+    const countSpan = document.getElementById("guildQuestCount");
+    
+    if (!roomId) return;
+
+    db.ref(`rooms/${roomId}/guild/quests`).on('value', (snapshot) => {
+        const quests = snapshot.val() || {};
+        const questCount = Object.keys(quests).length;
+        
+        if(countSpan) countSpan.textContent = questCount;
+
+        if (questCount === 0) {
+            listDiv.innerHTML = '<p style="color:#aaa; text-align:center;">ยังไม่มีเควสเลื่อนขั้น</p>';
+            return;
+        }
+
+        let html = '<ul style="list-style: none; padding: 0; margin: 0;">';
+        for (const key in quests) {
+            const quest = quests[key];
+            html += `
+                <li style="border-bottom: 1px solid #444; padding: 8px 0; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong style="color: #007bff;">${quest.title}</strong>
+                        <div style="font-size: 0.8em; color: #bbb;">
+                            สำหรับ: <span style="color: #ffc107;">${quest.requiredClass}</span> (Lv.${quest.requiredLevel})
+                        </div>
+                    </div>
+                    <button onclick="deleteGuildQuest('${key}', '${quest.title}')" 
+                        style="width: auto; padding: 4px 10px; font-size: 0.8em; background-color: #dc3545; border: none; border-radius: 4px; color: white; cursor: pointer;">
+                        ลบ
+                    </button>
+                </li>
+            `;
+        }
+        html += '</ul>';
+        listDiv.innerHTML = html;
+    });
+}
+function deleteGuildQuest(questId, questTitle) {
+    const roomId = sessionStorage.getItem('roomId');
+    
+    Swal.fire({
+        title: 'ลบเควส?',
+        text: `ต้องการลบเควส "${questTitle}" ใช่หรือไม่?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'ลบเลย',
+        confirmButtonColor: '#d33'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            db.ref(`rooms/${roomId}/guild/quests/${questId}`).remove()
+                .then(() => {
+                    const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
+                    Toast.fire({ icon: 'success', title: 'ลบเรียบร้อย' });
+                });
+        }
+    });
+}
+
 // =================================================================================
 // ส่วนที่ 7: Initial Load & Real-time Listeners
 // =================================================================================
@@ -1444,21 +1606,31 @@ function listenForActionComplete() {
   const actionRef = db.ref(`rooms/${roomId}/combat/actionComplete`);
 
   actionRef.on('value', async (snap) => {
-    const uidOrKey = snap.val(); 
+    const uidOrKey = snap.val(); // ID ของคนที่เพิ่งเล่นจบ
     if (!uidOrKey) return;
 
-    const currentUnit = combatState?.turnOrder?.[combatState?.currentTurnIndex];
-    if (!currentUnit || uidOrKey !== currentUnit.id) {
-        if (currentUnit && uidOrKey !== currentUnit.id) {
-            console.warn(`[DM] Received STALE signal from ${uidOrKey}. Clearing signal.`);
-            await actionRef.remove();
-        }
-        return; 
+    // ⭐ [แก้] ดึงข้อมูล Combat ล่าสุดจาก Firebase โดยตรง (กันเหนียว)
+    const combatSnap = await db.ref(`rooms/${roomId}/combat`).get();
+    const liveCombatState = combatSnap.val();
+
+    if (!liveCombatState || !liveCombatState.isActive) return;
+
+    const currentUnit = liveCombatState.turnOrder[liveCombatState.currentTurnIndex];
+
+    // เช็คว่าคนที่ส่งสัญญาณมา คือเจ้าของเทิร์นจริงๆ ใช่ไหม?
+    if (currentUnit && uidOrKey === currentUnit.id) {
+        console.log(`[DM] ได้รับ Signal จบเทิร์นจาก ${uidOrKey} -> เปลี่ยนเทิร์น!`);
+        
+        // ลบสัญญาณทิ้งก่อน (กันรวน)
+        await actionRef.remove(); 
+        
+        // สั่งเปลี่ยนเทิร์น
+        await advanceTurn(); 
+    } else {
+        console.warn(`[DM] ได้รับ Signal จาก ${uidOrKey} แต่ตอนนี้เทิร์นของ ${currentUnit?.id} (ข้อมูลอาจไม่ตรงกัน)`);
+        // ถ้าค้างนานๆ ให้ลบทิ้งไปเลย
+        // await actionRef.remove(); 
     }
-    
-    console.log(`[DM] ได้รับ Signal จบเทิร์นจาก ${uidOrKey}`);
-    await actionRef.remove(); 
-    await advanceTurn(); 
   });
 }
 
@@ -1551,6 +1723,10 @@ window.onload = function() {
             resetPlayerEditor();
         }
         displayCombatState(combatState); 
+
+        if (typeof updatePvPSelects === 'function') {
+            updatePvPSelects();
+        }
     });
 
     const enemiesRef = db.ref(`rooms/${roomId}/enemies`);
@@ -1591,7 +1767,89 @@ window.onload = function() {
     populateConsumableInputs(); 
 
     document.getElementById("playerSelect").addEventListener('change', loadPlayer);
+
+    monitorShopItems();
+    document.getElementById("shopIdSelect").addEventListener('change', monitorShopItems);
+    monitorGuildQuests();
+
+    function updatePvPSelects() {
+        const p1Select = document.getElementById('pvpPlayer1');
+        const p2Select = document.getElementById('pvpPlayer2');
+        if(!p1Select || !p2Select) return;
+
+        // เก็บค่าเดิมไว้ก่อน (กันรีเฟรชแล้วหาย)
+        const sel1 = p1Select.value;
+        const sel2 = p2Select.value;
+
+        p1Select.innerHTML = '<option value="">-- เลือก --</option>';
+        p2Select.innerHTML = '<option value="">-- เลือก --</option>';
+
+        let count = 0;
+
+        for (const uid in allPlayersDataByUID) {
+            const p = allPlayersDataByUID[uid];
+            
+            // ⭐ [เพิ่มเงื่อนไข] แสดงเฉพาะคนที่อยู่ที่ 'colosseum_lobby' ⭐
+            if (p.location === 'colosseum_lobby') {
+                const status = p.hp > 0 ? '' : ' (บาดเจ็บ)';
+                const optionHTML = `<option value="${uid}">${p.name} (Lv.${p.level})${status}</option>`;
+                
+                p1Select.innerHTML += optionHTML;
+                p2Select.innerHTML += optionHTML;
+                count++;
+            }
+        }
+        
+        // พยายามเลือกค่าเดิม (ถ้าเขายังอยู่ในล็อบบี้)
+        if (p1Select.querySelector(`option[value="${sel1}"]`)) p1Select.value = sel1;
+        if (p2Select.querySelector(`option[value="${sel2}"]`)) p2Select.value = sel2;
+
+        // (Optional) ถ้าไม่มีใครลงทะเบียนเลย อาจจะใส่ข้อความแจ้งเตือนใน Console หรือ UI
+        if (count === 0) {
+            const emptyOpt = '<option disabled>-- ยังไม่มีผู้ลงทะเบียน --</option>';
+            p1Select.innerHTML += emptyOpt;
+            p2Select.innerHTML += emptyOpt;
+        }
+    }
 };
+
+async function startPvPMatch() {
+    const p1Uid = document.getElementById('pvpPlayer1').value;
+    const p2Uid = document.getElementById('pvpPlayer2').value;
+    const roomId = sessionStorage.getItem('roomId');
+
+    if (!p1Uid || !p2Uid) return showCustomAlert('กรุณาเลือกผู้เล่นทั้ง 2 ฝ่าย', 'warning');
+    if (p1Uid === p2Uid) return showCustomAlert('ไม่สามารถเลือกคนเดียวกันได้', 'error');
+
+    const p1 = allPlayersDataByUID[p1Uid];
+    const p2 = allPlayersDataByUID[p2Uid];
+
+    // รีเซ็ตสถานะเก่า
+    const playerUpdates = {};
+    playerUpdates[`/rooms/${roomId}/playersByUid/${p1Uid}/activeEffects`] = [];
+    playerUpdates[`/rooms/${roomId}/playersByUid/${p2Uid}/activeEffects`] = [];
+    playerUpdates[`/rooms/${roomId}/playersByUid/${p1Uid}/skillCooldowns`] = {};
+    playerUpdates[`/rooms/${roomId}/playersByUid/${p2Uid}/skillCooldowns`] = {};
+    await db.ref().update(playerUpdates);
+
+    // สร้าง Turn Order
+    const units = [
+        { id: p1Uid, name: p1.name, dex: calculateTotalStat(p1, 'DEX'), type: 'player' },
+        { id: p2Uid, name: p2.name, dex: calculateTotalStat(p2, 'DEX'), type: 'player' }
+    ];
+    units.sort((a, b) => b.dex - a.dex); // เรียงตาม DEX
+
+    const pvpState = {
+        isActive: true,
+        type: 'PVP', // ⭐ สำคัญ: ระบุว่าเป็น PvP
+        turnOrder: units,
+        currentTurnIndex: 0,
+        participants: { [p1Uid]: true, [p2Uid]: true }
+    };
+
+    await db.ref(`rooms/${roomId}/combat`).set(pvpState);
+    showCustomAlert(`เริ่มประลอง! ${p1.name} VS ${p2.name}`, 'success');
+}
 
 function populateClassCheckboxes() {
     const container = document.getElementById('recommendedClassCheckboxes');
