@@ -272,7 +272,7 @@ async function finalizeStats() {
     playerRef.update(updates).then(() => {
         hideLoading();
         showCustomAlert("บันทึกสถานะเรียบร้อยแล้ว! กำลังกลับไปที่แดชบอร์ด...", 'success');
-        setTimeout(() => { window.location.href = "player-dashboard.html"; }, 1500);
+        setTimeout(() => { window.location.href = "map.html"; }, 1500);
     }).catch((error) => {
         hideLoading();
         showCustomAlert("เกิดข้อผิดพลาดในการบันทึก: " + error.message, 'error');
