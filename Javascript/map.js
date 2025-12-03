@@ -708,9 +708,8 @@ window.onload = function() {
     // 1. ฟังข้อมูลผู้เล่น (สำหรับ GP, Level, Class)
     playerRef.on('value', (snapshot) => {
         if (!snapshot.exists()) {
-            // (กรณีที่ DM ลบตัวละคร)
-            Swal.fire('ไม่พบตัวละคร', 'ไม่พบข้อมูลตัวละครของคุณในห้องนี้ กำลังกลับไปที่ล็อบบี้...', 'warning');
-            setTimeout(() => window.location.href = 'lobby.html', 2000);
+            console.log("ไม่พบข้อมูลตัวละคร -> ไปหน้าสร้างใหม่");
+            window.location.replace('PlayerCharecter.html');
             return;
         }
         playerData = snapshot.val();
