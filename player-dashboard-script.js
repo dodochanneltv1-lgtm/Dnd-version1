@@ -376,26 +376,71 @@ function displayCharacter(character, combatState) {
 function displayInventory(inventory = []) { 
     const list = document.getElementById("inventory"); 
     if(!list) return; 
-    list.innerHTML = inventory.length === 0 ? "<li>ยังไม่มีไอเทม</li>" : ""; 
     
+    if (inventory.length === 0) {
+        list.innerHTML = "<li style='color:#777; text-align:center; padding:10px;'>กระเป๋าว่างเปล่า</li>";
+        return; 
+    }
+    
+    list.innerHTML = ""; 
+
     inventory.forEach((item, index) => { 
         if (!item || !item.name) return; 
+        
         const li = document.createElement("li"); 
-        let itemText = `${item.name} (x${item.quantity})`;
+        li.style.cssText = "background:rgba(0,0,0,0.4); padding:10px; margin-bottom:5px; border-radius:5px; border-left: 3px solid #ffae00;";
         
+        // Header
+        let headerHtml = `<div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-weight:bold; color:#ffeb8a; font-size:1em;">${item.name} <span style="color:#aaa; font-weight:normal;">(x${item.quantity})</span></span>`;
+        
+        // Durability Badge
         if (item.durability !== undefined) {
-             if (item.durability <= 0) itemText += ` <span style="color: #dc3545; font-weight: bold;">[พัง 0%]</span>`;
-             else itemText += ` [${item.durability}%]`;
+             if (item.durability <= 0) headerHtml += `<span style="background:#dc3545; color:white; padding:1px 5px; border-radius:3px; font-size:0.7em;">พัง</span>`;
+             else {
+                 let color = item.durability > 30 ? '#28a745' : '#ffc107';
+                 headerHtml += `<span style="color:${color}; font-size:0.8em;">${item.durability}%</span>`;
+             }
         }
+        headerHtml += `</div>`;
+
+        // Details
+        let detailsHtml = '<div style="font-size:0.85em; color:#ccc; margin-top:4px; line-height:1.4;">';
         
+        // Stats
+        if (item.bonuses && Object.keys(item.bonuses).length > 0) {
+            const stats = Object.entries(item.bonuses).map(([k, v]) => `${k}+${v}`).join(', ');
+            detailsHtml += `<div style="color:#66b2ff;">⚡ ${stats}</div>`;
+        }
+        // Damage
+        if (item.damageDice) {
+             detailsHtml += `<div style="color:#ff6666;">⚔️ ${item.damageDice} (${item.weaponType || 'อาวุธ'})</div>`;
+        }
+        // Effects (Heal/Buff)
+        if (item.effects) {
+            let effs = [];
+            if(item.effects.heal) effs.push(`❤️ ฟื้นฟู ${item.effects.heal}`);
+            if(item.effects.permStats) item.effects.permStats.forEach(p => effs.push(`💪 ${p.stat}+${p.amount}`));
+            if(item.effects.tempStats) item.effects.tempStats.forEach(t => effs.push(`⏱️ ${t.stat}+${t.amount}`));
+            
+            if(effs.length > 0) detailsHtml += `<div style="color:#00e676;">🧪 ${effs.join(', ')}</div>`;
+        }
+        detailsHtml += '</div>';
+
+        // Buttons
+        let buttonsHtml = `<div style="margin-top:8px; text-align:right;">`;
         if (item.itemType === 'สวมใส่' || item.itemType === 'อาวุธ') {
             if (item.durability === undefined || item.durability > 0) {
-                 itemText += ` <button onclick="equipItem(${index})" style="margin-left: 10px; padding: 2px 8px; font-size: 0.8em;">สวมใส่</button>`; 
+                 buttonsHtml += `<button onclick="equipItem(${index})" style="width:auto; padding:4px 12px; font-size:0.8em; border-radius:4px; border:none; color:white; background:linear-gradient(90deg, #007bff, #0056b3); cursor:pointer;">สวมใส่</button>`; 
+            } else {
+                 buttonsHtml += `<button disabled style="width:auto; padding:4px 12px; font-size:0.8em; border-radius:4px; border:none; background:#555; color:#888; cursor:not-allowed;">ชำรุด</button>`;
             }
         } else if (item.itemType === 'บริโภค') {
-            itemText += ` <button onclick="useConsumableItem(${index})" style="margin-left: 10px; padding: 2px 8px; font-size: 0.8em; background-color: #28a745;">ใช้</button>`;
+            buttonsHtml += `<button onclick="useConsumableItem(${index})" style="width:auto; padding:4px 12px; font-size:0.8em; border-radius:4px; border:none; color:white; background:linear-gradient(90deg, #28a745, #1e7e34); cursor:pointer;">ใช้งาน</button>`;
         }
-        li.innerHTML = itemText; 
+        buttonsHtml += `</div>`;
+
+        li.innerHTML = headerHtml + detailsHtml + buttonsHtml;
         list.appendChild(li); 
     }); 
 }
@@ -435,27 +480,91 @@ function displayTeammates(currentUserUid) {
 function showTeammateInfo() {
     const uid = document.getElementById('teammateSelect').value;
     const infoDiv = document.getElementById('teammateInfo');
+    
     if (!uid) {
         infoDiv.innerHTML = '<p>เลือกเพื่อนร่วมทีมเพื่อดูข้อมูล</p>';
         return;
     }
+    
     const player = allPlayersInRoom[uid];
     if (player) {
+        // คำนวณค่าต่างๆ แบบ Real-time
         const finalCon = calculateTotalStat(player, 'CON');
         const maxHp = calcHPFn(player.race, player.classMain, finalCon);
+        
+        // สร้างรายการสเตตัส
+        let statsHtml = `<div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-top:5px; font-size: 0.9em;">`;
+        ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'].forEach(stat => {
+            const val = calculateTotalStat(player, stat);
+            // เพิ่มสีเขียวถ้ามีบัฟ (เช็คคร่าวๆ จาก ActiveEffects หรือเทียบกับ Base ก็ได้ แต่เอาแบบแสดงค่ารวมเลยดูง่ายสุด)
+            statsHtml += `<div style="background:rgba(0,0,0,0.3); padding:2px; text-align:center; border-radius:3px;">${stat}: <strong>${val}</strong></div>`;
+        });
+        statsHtml += `</div>`;
+
+        // สร้างรายการอุปกรณ์สวมใส่
+        let equipHtml = `<ul style="margin-top:10px; padding-left:15px; font-size:0.85em; color:#ddd;">`;
+        const slots = { mainHand: '⚔️', offHand: '🛡️', head: '🧢', chest: '👕', legs: '👖', feet: '👢' };
+        let hasEquip = false;
+        
+        if (player.equippedItems) {
+            for (const [key, icon] of Object.entries(slots)) {
+                const item = player.equippedItems[key];
+                if (item) {
+                    hasEquip = true;
+                    // แสดงความทนทานถ้ามี
+                    const dura = (item.durability !== undefined) ? ` [${item.durability}%]` : '';
+                    // ไฮไลท์สีถ้าพัง
+                    const style = (item.durability <= 0) ? 'color:#ff4d4d; text-decoration:line-through;' : 'color:#ffc107;';
+                    equipHtml += `<li>${icon} <span style="${style}">${item.name}${dura}</span></li>`;
+                }
+            }
+        }
+        if(!hasEquip) equipHtml += `<li><em>(ตัวเปล่า)</em></li>`;
+        equipHtml += `</ul>`;
+
         infoDiv.innerHTML = `
-            <p><strong>${player.name} (Lv. ${player.level})</strong></p>
-            <p><strong>HP:</strong> ${player.hp} / ${maxHp}</p>
-            <p><strong>เผ่า:</strong> ${player.raceEvolved || player.race}</p>
-            <p><strong>อาชีพ:</strong> ${player.classMain}</p>
+            <div style="border:1px solid #444; padding:10px; border-radius:8px; background:rgba(0,0,0,0.4);">
+                <h3 style="margin:0 0 5px 0; color:#8be4ff;">${player.name} <small>(Lv. ${player.level})</small></h3>
+                <p style="margin:2px 0;"><strong>HP:</strong> <span style="color:${player.hp < maxHp*0.3 ? '#ff4d4d' : '#00ff00'};">${player.hp}</span> / ${maxHp}</p>
+                <p style="margin:2px 0;"><strong>อาชีพ:</strong> ${player.classMain} / ${player.classSub || '-'}</p>
+                <hr style="border-color:#555; margin:5px 0;">
+                <strong>📊 สถานะปัจจุบัน:</strong>
+                ${statsHtml}
+                <hr style="border-color:#555; margin:5px 0;">
+                <strong>🛡️ อุปกรณ์ที่สวมใส่:</strong>
+                ${equipHtml}
+            </div>
         `;
     }
 }
 
 function displayQuest(quest) {
-    document.getElementById('questTitle').textContent = quest?.title || '-';
-    document.getElementById('questDetail').textContent = quest?.detail || '-';
-    document.getElementById('questReward').textContent = quest?.reward || '-';
+    const container = document.getElementById('questPanel_body');
+    if (!container) return;
+
+    if (!quest || !quest.title) {
+        container.innerHTML = `<p style="text-align:center; color:#777; padding:10px;"><em>ยังไม่ได้รับภารกิจ</em></p>`;
+        return;
+    }
+
+    const isGuild = quest.isGuildQuest === true;
+    const badge = isGuild 
+        ? `<span style="background:#ffc107; color:#000; padding:2px 8px; border-radius:10px; font-size:0.75em; font-weight:bold; display:inline-block; margin-bottom:5px;">🏆 เควสกิลด์</span>` 
+        : `<span style="background:#17a2b8; color:#fff; padding:2px 8px; border-radius:10px; font-size:0.75em; font-weight:bold; display:inline-block; margin-bottom:5px;">📜 เควสทั่วไป</span>`;
+
+    container.innerHTML = `
+        <div style="border-bottom:1px dashed #555; padding-bottom:10px; margin-bottom:10px;">
+            ${badge}
+            <h3 style="margin:5px 0 0 0; color:#ffeb8a; font-size:1.3em;">${quest.title}</h3>
+        </div>
+        
+        <p style="font-size:0.95em; line-height:1.6; color:#ddd; margin-bottom:15px;">${quest.detail || 'ไม่มีรายละเอียด'}</p>
+        
+        <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:5px; border:1px solid #444;">
+            <div style="color:#28a745; margin-bottom:5px;"><strong>🎁 รางวัล:</strong> ${quest.reward || '-'}</div>
+            ${quest.expReward ? `<div style="color:#00bcd4;"><strong>✨ EXP:</strong> ${quest.expReward}</div>` : ''}
+        </div>
+    `;
 }
 
 function displayStory(story) {
@@ -465,13 +574,45 @@ function displayStory(story) {
 function displayEnemies(enemies, currentUserUid) {
     const container = document.getElementById('enemyPanelContainer');
     const targetSelect = document.getElementById('enemyTargetSelect');
-    
-    // จำค่าที่เลือกอยู่ปัจจุบันไว้ (กัน List เด้งแล้ว selection หาย)
     const currentSelection = targetSelect.value;
 
     container.innerHTML = '';
     targetSelect.innerHTML = '';
     
+    if (combatState && combatState.isActive && combatState.type === 'PVP') {
+        // ถ้าเป็น PvP ให้หาคู่ต่อสู้จาก Turn Order
+        const opponentUnit = combatState.turnOrder.find(u => u.id !== currentUserUid);
+        
+        if (opponentUnit) {
+            // ดึงข้อมูลจริงจาก allPlayersInRoom
+            const opponentData = allPlayersInRoom[opponentUnit.id];
+            if (opponentData) {
+                const hpText = opponentData.hp <= 0 ? `<span style="color:red;">(พ่ายแพ้)</span>` : `(HP: ${opponentData.hp})`;
+                
+                container.innerHTML = `
+                    <div style="border: 2px solid #ff4d4d; padding: 10px; border-radius: 5px; background: rgba(100,0,0,0.3);">
+                        <h3 style="color: #ff4d4d; margin:0;">VS คู่ประลอง</h3>
+                        <div style="font-size: 1.2em; color: #fff;">${opponentData.name}</div>
+                        <div>${hpText}</div>
+                    </div>
+                `;
+
+                if (opponentData.hp > 0) {
+                    const option = document.createElement('option');
+                    option.value = opponentUnit.id; // ใช้ UID ของผู้เล่นเป็น value
+                    option.textContent = `${opponentData.name} (ผู้เล่น)`;
+                    targetSelect.appendChild(option);
+                    targetSelect.value = opponentUnit.id; // เลือกให้อัตโนมัติเลย
+                } else {
+                    targetSelect.innerHTML = '<option>-- การประลองจบลง --</option>';
+                }
+            }
+        } else {
+            container.innerHTML = '<p>รอคู่ต่อสู้...</p>';
+        }
+        return; // จบการทำงานของ PvP ตรงนี้เลย ไม่ต้องไปลูป enemies ปกติ
+    }
+
     let hasEnemies = false;
     let hasLiveEnemies = false;
 
@@ -563,6 +704,9 @@ async function playerRollDice() {
 function applyDurabilityDamage(updates, equippedItems, type, options = {}) {
     console.log(`[Durability] Applying damage type: ${type}`, options);
     
+    // ⭐ [แก้] ป้องกันกรณีตัวละครถอดของหมด (equippedItems เป็น null/undefined)
+    if (!equippedItems) equippedItems = {}; 
+
     const getRandomArmor = (slots) => {
         const availableSlots = slots.filter(s => equippedItems[s] && (equippedItems[s].durability === undefined || equippedItems[s].durability > 0));
         if (availableSlots.length === 0) return null;
@@ -583,7 +727,10 @@ function applyDurabilityDamage(updates, equippedItems, type, options = {}) {
             const { damageTaken } = options;
             const duraLossArmor = Math.ceil(damageTaken / 2); 
             let armorSlots = ['head', 'chest', 'legs', 'feet'];
-            const piecesToDamage = (armorSlots.filter(s => equippedItems[s] && (equippedItems[s].durability === undefined || equippedItems[s].durability > 0)).length >= 2) ? 2 : 1;
+            // เช็คว่ามีเกราะให้พังไหม
+            const availableArmor = armorSlots.filter(s => equippedItems[s] && (equippedItems[s].durability === undefined || equippedItems[s].durability > 0));
+            
+            const piecesToDamage = availableArmor.length >= 2 ? 2 : 1;
             
             for (let i = 0; i < piecesToDamage; i++) {
                 const randomSlot = getRandomArmor(armorSlots); 
@@ -597,6 +744,7 @@ function applyDurabilityDamage(updates, equippedItems, type, options = {}) {
             break;
 
         case 'DODGE':
+            // ⭐ [แก้] เช็คให้ชัวร์ว่ามี equippedItems['feet'] จริงๆ ก่อนใช้งาน
             if (equippedItems['feet'] && (equippedItems['feet'].durability === undefined || equippedItems['feet'].durability > 0)) {
                 const item = equippedItems['feet'];
                 const duraLossDodge = 3; 
@@ -617,6 +765,7 @@ function applyDurabilityDamage(updates, equippedItems, type, options = {}) {
             break;
     }
 
+    // Update display (Optional)
     if (equippedItems) {
        Object.keys(updates).forEach(path => {
            const parts = path.split('/'); 
@@ -625,7 +774,7 @@ function applyDurabilityDamage(updates, equippedItems, type, options = {}) {
                if(equippedItems[slot]) equippedItems[slot].durability = updates[path];
            }
        });
-       displayEquippedItems(equippedItems);
+       if (typeof displayEquippedItems === 'function') displayEquippedItems(equippedItems);
     }
 }
 
@@ -816,12 +965,43 @@ async function handlePendingAttack(attackData, playerRef) {
 
         Swal.fire({ title: feedbackTitle, html: feedbackHtml, icon: 'info', timer: 3500, showConfirmButton: false });
         
-        await db.ref(`rooms/${roomId}/combat/resolution`).set(defenseResponse);
-        if (Object.keys(updates).length > 0) await playerRef.update(updates);
+        const currentSnap = await playerRef.get();
+        const currentData = currentSnap.val();
+        const newHp = Math.max(0, (currentData.hp || 0) - defenseResponse.damageTaken);
+        
+        updates['hp'] = newHp;
+
+       if (Object.keys(updates).length > 0) await playerRef.update(updates);
+        
         await playerRef.child('pendingAttack').remove();
+
+        if (!attackData.isPvP) {
+            const resolutionData = {
+                attackerKey: attackData.attackerKey,
+                defenderUid: playerRef.key,
+                choice: defenseResponse.choice, // block, dodge, none
+                roll: defenseResponse.roll || 0,
+                success: defenseResponse.success || false,
+                damageReduced: defenseResponse.damageReduced || 0,
+                damageTaken: defenseResponse.damageTaken
+            };
+            
+            // ส่งข้อมูลไปที่ combat/resolution
+            const roomId = sessionStorage.getItem('roomId');
+            await db.ref(`rooms/${roomId}/combat/resolution`).set(resolutionData);
+        }
+        
+        if (attackData.isPvP) {
+            const roomId = sessionStorage.getItem('roomId');
+            // ส่งสัญญาณบอกระบบว่า "เทิร์นของผู้โจมตี (attackerKey) จบแล้วนะ"
+            // await db.ref(`rooms/${roomId}/combat/actionComplete`).set(attackData.attackerKey);
+
+            if (typeof advanceCombatTurn === 'function') {
+                await advanceCombatTurn(roomId);
+            }
+        }
     });
 }
-
 // --- Initializer ---
 firebase.auth().onAuthStateChanged(user => {
     if (user) {
@@ -872,14 +1052,16 @@ firebase.auth().onAuthStateChanged(user => {
         });
 
         playerRef.child('pendingAttack').on('value', s => {
+            const titleEl = Swal.getTitle();
+            const titleText = titleEl ? titleEl.textContent : "";
             if (s.exists() && !Swal.isVisible() && combatState && combatState.isActive) {
-                 handlePendingAttack(s.val(), playerRef);
-            } else if (!s.exists() && Swal.isVisible() && Swal.getTitle() && Swal.getTitle().includes('โจมตี')) {
+                handlePendingAttack(s.val(), playerRef);
+            } else if (!s.exists() && Swal.isVisible() && titleEl && titleEl.textContent.includes('โจมตี')) {
                 Swal.close();
-            }
+            }    
         });
 
     } else {
         window.location.replace('login.html');
     }
-});
+}); 
