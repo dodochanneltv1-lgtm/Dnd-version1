@@ -975,6 +975,22 @@ async function handlePendingAttack(attackData, playerRef) {
         
         await playerRef.child('pendingAttack').remove();
 
+        if (!attackData.isPvP) {
+            const resolutionData = {
+                attackerKey: attackData.attackerKey,
+                defenderUid: playerRef.key,
+                choice: defenseResponse.choice, // block, dodge, none
+                roll: defenseResponse.roll || 0,
+                success: defenseResponse.success || false,
+                damageReduced: defenseResponse.damageReduced || 0,
+                damageTaken: defenseResponse.damageTaken
+            };
+            
+            // ส่งข้อมูลไปที่ combat/resolution
+            const roomId = sessionStorage.getItem('roomId');
+            await db.ref(`rooms/${roomId}/combat/resolution`).set(resolutionData);
+        }
+        
         if (attackData.isPvP) {
             const roomId = sessionStorage.getItem('roomId');
             // ส่งสัญญาณบอกระบบว่า "เทิร์นของผู้โจมตี (attackerKey) จบแล้วนะ"
