@@ -471,12 +471,14 @@ const SKILL_DATA = {
     'god_judgment': {
         id: 'god_judgment',
         name: 'พิพากษา',
-        description: 'หาก HP < 50% ตายทันที, หาก > 50% โดน 75% MaxHP',
-        targetType: 'enemy', skillType: 'DAMAGE', skillTrigger: 'ACTIVE',
+        description: 'มอบความตายแก่เป้าหมายทันทีโดยไม่มีเงื่อนไข (ใช้ได้เพียง 1 ครั้งต่อการต่อสู้)',
+        targetType: 'enemy', 
+        skillType: 'DAMAGE', 
+        skillTrigger: 'ACTIVE',
         cooldown: { type: 'PER_COMBAT', uses: 1 },
         effect: {
             type: 'FORMULA',
-            formula: 'GOD_JUDGMENT' // (HP < 50% ? DIE : DMG 75% MaxHP)
+            formula: 'GOD_JUDGMENT'
         }
     },
     'god_finger_death': {

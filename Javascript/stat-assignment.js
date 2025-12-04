@@ -79,13 +79,22 @@ function loadCharacterData(uid) {
         if (snapshot.exists()) {
             characterData = snapshot.val();
             
-            // เก็บค่า investedStats "เดิม" ไว้เปรียบเทียบ
-            baseInvested = JSON.parse(JSON.stringify(characterData.stats.investedStats || {}));
-            // คัดลอกค่าเดิมมาใส่ค่า "ชั่วคราว" ที่จะใช้ในหน้านี้
-            Object.assign(statsToAssign, characterData.stats.investedStats || {});
+            // [FIX START] แก้ไข: แปลงข้อมูลทั้งหมดเป็นตัวเลข (Integer) ป้องกัน Error แต้มติดลบ/ต่อ String
+            baseInvested = {};
+            const rawInvested = characterData.stats.investedStats || {};
             
-            // ดึงแต้มคงเหลือ (ข้อ 4.1 / 4.2)
-            newPointsAvailable = characterData.freeStatPoints || 0;
+            // วนลูปแปลงค่าทุกค่าใน investedStats ให้เป็นตัวเลข
+            for (const key in rawInvested) {
+                baseInvested[key] = parseInt(rawInvested[key]) || 0;
+            }
+
+            // ล้างค่า statsToAssign เก่าออกก่อน แล้วคัดลอกค่าที่เป็นตัวเลขแล้วลงไป
+            for (const key in statsToAssign) delete statsToAssign[key];
+            Object.assign(statsToAssign, baseInvested);
+            
+            // แปลงแต้มคงเหลือเป็นตัวเลขด้วย
+            newPointsAvailable = parseInt(characterData.freeStatPoints) || 0;
+            // [FIX END]
             
             // เริ่มสร้าง UI
             renderStatAssignment();
@@ -148,20 +157,17 @@ function renderStatAssignment() {
  * อัปเดต UI แต้มคงเหลือ
  */
 function updatePointsUI() {
-    const baseSpent = Object.values(baseInvested).reduce((a, b) => a, 0);
-    const currentSpent = Object.values(statsToAssign).reduce((a, b) => a + b, 0);
-    const newPointsUsed = currentSpent - baseSpent;
+    const currentTotalInvested = Object.values(statsToAssign).reduce((a, b) => a + b, 0);
+    const baseTotalInvested = Object.values(baseInvested).reduce((a, b) => a + b, 0);
+    const pointsSpentNew = currentTotalInvested - baseTotalInvested;
     
-    const remaining = newPointsAvailable - newPointsUsed;
+    const remaining = newPointsAvailable - pointsSpentNew;
     document.getElementById('remainingPointsUI').textContent = remaining;
     
-    // ปิดปุ่มบวก ถ้าแต้มหมด
+    // ควบคุมปุ่มบวก
     document.querySelectorAll('.btn-adjust').forEach(btn => {
         if (btn.textContent === '+') {
-            // (ยกเว้นปุ่มของโกเลมที่ปิดถาวร)
-            if (!btn.disabled) {
-                btn.disabled = (remaining <= 0);
-            }
+            btn.disabled = (remaining <= 0);
         }
     });
 }
@@ -170,30 +176,33 @@ function updatePointsUI() {
  * [อัปเกรด v2] ตรรกะการกด +/- แต้ม (ข้อ 4.2)
  */
 function adjustStat(stat, amount) {
-    // [อัปเกรด v2] ตรวจสอบแต้มคงเหลือ
-    const baseSpent = Object.values(baseInvested).reduce((a, b) => a, 0);
-    const currentSpent = Object.values(statsToAssign).reduce((a, b) => a + b, 0);
-    const newPointsUsed = currentSpent - baseSpent;
-
-    // ถ้ากดบวก แต่แต้มไม่เหลือ
-    if (amount > 0 && newPointsUsed >= newPointsAvailable) {
+    // คำนวณแต้มที่ใช้ไปทั้งหมด ณ ปัจจุบัน (รวมที่เพิ่งกด)
+    const currentTotalInvested = Object.values(statsToAssign).reduce((a, b) => a + b, 0);
+    // คำนวณแต้ม Base เดิมทั้งหมด
+    const baseTotalInvested = Object.values(baseInvested).reduce((a, b) => a + b, 0);
+    
+    // แต้มที่ใช้เพิ่มขึ้นมาจากเดิม
+    const pointsSpentNew = currentTotalInvested - baseTotalInvested;
+    
+    // 1. เช็คกรณีเพิ่มแต้ม: ถ้าแต้มใหม่ที่ใช้ >= แต้มที่มีให้ใช้ --> ห้ามเพิ่ม
+    if (amount > 0 && pointsSpentNew >= newPointsAvailable) {
         showCustomAlert("แต้มไม่พอ!", 'warning');
         return;
     }
-    
-    // ถ้ากดลบ แต่ค่าต่ำกว่าค่า "เดิม" ที่เข้ามา (ไม่สามารถลดแต้มเก่าได้)
+
+    // 2. เช็คกรณีลดแต้ม: ห้ามลดต่ำกว่าค่า Base เดิมของ stat นั้น
     if (amount < 0 && statsToAssign[stat] <= (baseInvested[stat] || 0)) {
-        return; // ไม่ให้ลบต่ำกว่าเดิม
+        return; // ห้ามลดต่ำกว่าค่าตั้งต้น
     }
 
+    // อัปเดตค่า
     statsToAssign[stat] += amount;
     
-    // อัปเดต UI (ข้อ 4.2 Real-time)
+    // อัปเดต UI
     document.getElementById(`assign-${stat}`).textContent = statsToAssign[stat];
     updatePointsUI();
     updateStatsSummary();
 }
-
 /**
  * [อัปเกรด v2] อัปเดตสรุปสเตตัสและ HP แบบ Real-time (ข้อ 4.2)
  */
@@ -228,7 +237,7 @@ async function finalizeStats() {
     const playerRef = db.ref(`rooms/${roomId}/playersByUid/${uid}`);
 
     // 1. คำนวณแต้มที่ใช้ไป
-    const baseSpent = Object.values(baseInvested).reduce((a, b) => a, 0);
+    const baseSpent = Object.values(baseInvested).reduce((a, b) => a + b, 0);
     const currentSpent = Object.values(statsToAssign).reduce((a, b) => a + b, 0);
     const newPointsUsed = currentSpent - baseSpent;
     const remainingPoints = newPointsAvailable - newPointsUsed;

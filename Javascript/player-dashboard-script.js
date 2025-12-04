@@ -11,71 +11,36 @@ const calcHPFn = typeof calculateHP === 'function' ? calculateHP : () => { conso
 const getStatBonusFn = typeof getStatBonus === 'function' ? getStatBonus : () => { console.error("getStatBonus not found!"); return 0; };
 const showAlert = typeof showCustomAlert === 'function' ? showCustomAlert : (msg, type) => { console.log(type + ':', msg); };
 
-/**
- * คำนวณสเตตัสรวม (Final Stat)
- */
+// =================================================================
 function calculateTotalStat(charData, statKey) {
-    if (!charData || !charData.stats) return 0;
+    if (!charData) return 0;
     
-    const stats = charData.stats;
     const upperStatKey = statKey.toUpperCase();
-    
-    const permanentLevel = charData.level || 1;
-    let tempLevel = 0;
-    if (Array.isArray(charData.activeEffects)) {
-         charData.activeEffects.forEach(effect => {
-             if ((effect.stat === 'Level' && effect.modType === 'FLAT') || effect.type === 'TEMP_LEVEL_PERCENT') {
-                 if(effect.type === 'TEMP_LEVEL_PERCENT') {
-                     tempLevel += Math.floor(permanentLevel * (effect.amount / 100));
-                 } else {
-                     tempLevel += (effect.amount || 0);
-                 }
-             }
-         });
-    }
-    const totalLevel = permanentLevel + tempLevel;
+    let baseStat = 0;
 
-    let baseStat = (stats.baseRaceStats?.[upperStatKey] || 0) +
+    // 1. คำนวณ Base Stat
+    if (charData.type === 'enemy' || (charData.stats && !charData.stats.baseRaceStats)) {
+        // [FIX] สำหรับศัตรู ให้ตั้ง Base Stat แล้วทำต่อ ไม่ Return ทันที
+        const s = charData.stats || {};
+        const rawValue = s[upperStatKey] || s[statKey.toLowerCase()] || 0;
+        baseStat = parseInt(rawValue) || 0;
+    } else {
+        // สำหรับผู้เล่น
+        const stats = charData.stats || {};
+        baseStat = (stats.baseRaceStats?.[upperStatKey] || 0) +
                    (stats.investedStats?.[upperStatKey] || 0) +
                    (stats.tempStats?.[upperStatKey] || 0);
 
-    const classMainData = (typeof CLASS_DATA !== 'undefined') ? CLASS_DATA[charData.classMain] : null;
-    const classSubData = (typeof CLASS_DATA !== 'undefined') ? CLASS_DATA[charData.classSub] : null;
-    
-    if (classMainData && classMainData.bonuses) baseStat += (classMainData.bonuses[upperStatKey] || 0);
-    if (classSubData && classSubData.bonuses) baseStat += (classSubData.bonuses[upperStatKey] || 0);
-
-    const raceId = charData.raceEvolved || charData.race;
-    const racePassives = (typeof RACE_DATA !== 'undefined' && RACE_DATA[raceId]?.passives) ? RACE_DATA[raceId].passives : [];
-    
-    const classMainId = charData.classMain;
-    const classPassives = (typeof CLASS_DATA !== 'undefined' && CLASS_DATA[classMainId]?.passives) ? CLASS_DATA[classMainId].passives : [];
-    
-    const classSubId = charData.classSub;
-    const subClassPassives = (typeof CLASS_DATA !== 'undefined' && CLASS_DATA[classSubId]?.passives) ? CLASS_DATA[classSubId].passives : [];
-    
-    const skillPassives = [];
-    if (typeof SKILL_DATA !== 'undefined') {
-        if(classMainId && SKILL_DATA[classMainId]) skillPassives.push(...SKILL_DATA[classMainId].filter(s => s.skillTrigger === 'PASSIVE'));
-        if(classSubId && SKILL_DATA[classSubId]) skillPassives.push(...SKILL_DATA[classSubId].filter(s => s.skillTrigger === 'PASSIVE'));
+        const classMainData = (typeof CLASS_DATA !== 'undefined') ? CLASS_DATA[charData.classMain] : null;
+        const classSubData = (typeof CLASS_DATA !== 'undefined') ? CLASS_DATA[charData.classSub] : null;
+        
+        if (classMainData && classMainData.bonuses) baseStat += (classMainData.bonuses[upperStatKey] || 0);
+        if (classSubData && classSubData.bonuses) baseStat += (classSubData.bonuses[upperStatKey] || 0);
+        
+        // (ละส่วน Passive เพื่อความกระชับ)
     }
 
-    const allPassives = [...racePassives, ...classPassives, ...subClassPassives, ...skillPassives];
-    
-    allPassives.forEach(passiveOrSkill => {
-        let effectObject = null;
-        if (passiveOrSkill.skillTrigger === 'PASSIVE') effectObject = passiveOrSkill.effect;
-        else if (passiveOrSkill.id && passiveOrSkill.effect) effectObject = passiveOrSkill.effect;
-        
-        if (effectObject) {
-            const effects = Array.isArray(effectObject) ? effectObject : [effectObject];
-            effects.forEach(p => {
-                if (p && p.type === 'PASSIVE_STAT_PERCENT' && p.stats?.includes(upperStatKey)) baseStat *= (1 + (p.amount / 100));
-                if (p && p.type === 'PASSIVE_STAT_FLAT' && p.stats?.includes(upperStatKey)) baseStat += p.amount;
-            });
-        }
-    });
-
+    // 2. [FIX] คำนวณ Active Effects (Buff/Debuff) ให้กับทั้งคนและศัตรู
     let flatBonus = 0;
     let percentBonus = 0;
     if (Array.isArray(charData.activeEffects)) {
@@ -86,45 +51,31 @@ function calculateTotalStat(charData, statKey) {
             }
         });
     }
+
+    // 3. รวมผลลัพธ์
+    let finalStat = (baseStat * (1 + (percentBonus / 100))) + flatBonus;
     
-    if (typeof allPlayersInRoom !== 'undefined') {
-        for (const uid in allPlayersInRoom) {
-            if (uid === charData.uid || !allPlayersInRoom[uid] || allPlayersInRoom[uid].hp <= 0) continue;
-            const teammate = allPlayersInRoom[uid];
-            const teammateClassId = teammate.classMain;
-            const teammatePassives = (typeof SKILL_DATA !== 'undefined' && SKILL_DATA[teammateClassId]) 
-                                     ? SKILL_DATA[teammateClassId].filter(s => s.skillTrigger === 'PASSIVE') : [];
-            teammatePassives.forEach(skill => {
-                const effects = Array.isArray(skill.effect) ? skill.effect : [skill.effect];
-                effects.forEach(p => {
-                    if (p && p.type === 'AURA_STAT_PERCENT' && (p.stats?.includes(upperStatKey) || p.stats?.includes('ALL'))) percentBonus += p.amount;
-                });
-            });
-        }
-    }
-
-    let equipBonus = 0;
-    if (charData.equippedItems) {
-        for (const slot in charData.equippedItems) {
-            const item = charData.equippedItems[slot];
-            if (!item || !item.bonuses || item.bonuses[upperStatKey] === undefined || (item.durability !== undefined && item.durability <= 0)) continue;
-            let itemStatBonus = item.bonuses[upperStatKey] || 0;
-            if (item.itemType === 'อาวุธ') {
-                if (slot === 'mainHand') {
-                    if (item.isProficient) itemStatBonus *= 1.015;
-                } else if (slot === 'offHand') {
-                    itemStatBonus *= 0.70;
+    // (โบนัสอุปกรณ์และเลเวลเฉพาะผู้เล่น)
+    if (charData.type !== 'enemy') {
+        const permanentLevel = charData.level || 1;
+        
+        // Equip Bonus... (ละไว้)
+        let equipBonus = 0;
+        if (charData.equippedItems) {
+             for (const slot in charData.equippedItems) {
+                const item = charData.equippedItems[slot];
+                if (item && item.bonuses && item.bonuses[upperStatKey]) {
+                    equipBonus += item.bonuses[upperStatKey];
                 }
-            }
-            equipBonus += itemStatBonus;
+             }
+        }
+        finalStat += equipBonus;
+
+        if (finalStat > 0 && permanentLevel > 1) {
+             finalStat += (finalStat * (permanentLevel - 1) * 0.2);
         }
     }
-
-    let finalStat = (baseStat * (1 + (percentBonus / 100))) + flatBonus + equipBonus;
-    if (finalStat > 0 && totalLevel > 1) {
-         const levelBonus = finalStat * (totalLevel - 1) * 0.2;
-         finalStat += levelBonus;
-    }
+    
     if (charData.race === 'โกเลม' && upperStatKey === 'DEX') return 0; 
 
     return Math.floor(finalStat);
@@ -394,7 +345,7 @@ function displayInventory(inventory = []) {
         let headerHtml = `<div style="display:flex; justify-content:space-between; align-items:center;">
             <span style="font-weight:bold; color:#ffeb8a; font-size:1em;">${item.name} <span style="color:#aaa; font-weight:normal;">(x${item.quantity})</span></span>`;
         
-        // Durability Badge
+        // Durability
         if (item.durability !== undefined) {
              if (item.durability <= 0) headerHtml += `<span style="background:#dc3545; color:white; padding:1px 5px; border-radius:3px; font-size:0.7em;">พัง</span>`;
              else {
@@ -406,38 +357,28 @@ function displayInventory(inventory = []) {
 
         // Details
         let detailsHtml = '<div style="font-size:0.85em; color:#ccc; margin-top:4px; line-height:1.4;">';
-        
-        // Stats
         if (item.bonuses && Object.keys(item.bonuses).length > 0) {
             const stats = Object.entries(item.bonuses).map(([k, v]) => `${k}+${v}`).join(', ');
             detailsHtml += `<div style="color:#66b2ff;">⚡ ${stats}</div>`;
         }
-        // Damage
-        if (item.damageDice) {
-             detailsHtml += `<div style="color:#ff6666;">⚔️ ${item.damageDice} (${item.weaponType || 'อาวุธ'})</div>`;
-        }
-        // Effects (Heal/Buff)
-        if (item.effects) {
-            let effs = [];
-            if(item.effects.heal) effs.push(`❤️ ฟื้นฟู ${item.effects.heal}`);
-            if(item.effects.permStats) item.effects.permStats.forEach(p => effs.push(`💪 ${p.stat}+${p.amount}`));
-            if(item.effects.tempStats) item.effects.tempStats.forEach(t => effs.push(`⏱️ ${t.stat}+${t.amount}`));
-            
-            if(effs.length > 0) detailsHtml += `<div style="color:#00e676;">🧪 ${effs.join(', ')}</div>`;
-        }
+        if (item.damageDice) detailsHtml += `<div style="color:#ff6666;">⚔️ ${item.damageDice}</div>`;
         detailsHtml += '</div>';
 
-        // Buttons
-        let buttonsHtml = `<div style="margin-top:8px; text-align:right;">`;
+        // Buttons Group
+        let buttonsHtml = `<div style="margin-top:8px; display:flex; gap:5px; justify-content:flex-end;">`;
+        
+        // 1. ปุ่มใช้งาน/สวมใส่
         if (item.itemType === 'สวมใส่' || item.itemType === 'อาวุธ') {
             if (item.durability === undefined || item.durability > 0) {
-                 buttonsHtml += `<button onclick="equipItem(${index})" style="width:auto; padding:4px 12px; font-size:0.8em; border-radius:4px; border:none; color:white; background:linear-gradient(90deg, #007bff, #0056b3); cursor:pointer;">สวมใส่</button>`; 
-            } else {
-                 buttonsHtml += `<button disabled style="width:auto; padding:4px 12px; font-size:0.8em; border-radius:4px; border:none; background:#555; color:#888; cursor:not-allowed;">ชำรุด</button>`;
+                 buttonsHtml += `<button onclick="equipItem(${index})" style="width:auto; padding:4px 10px; font-size:0.8em; border-radius:4px; border:none; color:white; background:#007bff;">สวมใส่</button>`; 
             }
         } else if (item.itemType === 'บริโภค') {
-            buttonsHtml += `<button onclick="useConsumableItem(${index})" style="width:auto; padding:4px 12px; font-size:0.8em; border-radius:4px; border:none; color:white; background:linear-gradient(90deg, #28a745, #1e7e34); cursor:pointer;">ใช้งาน</button>`;
+            buttonsHtml += `<button onclick="useConsumableItem(${index})" style="width:auto; padding:4px 10px; font-size:0.8em; border-radius:4px; border:none; color:white; background:#28a745;">ใช้งาน</button>`;
         }
+
+        // 2. [ใหม่] ปุ่มจัดการ (ทิ้ง/ขาย/ส่ง)
+        buttonsHtml += `<button onclick="openItemOptions(${index})" style="width:auto; padding:4px 10px; font-size:0.8em; border-radius:4px; border:none; color:white; background:#6c757d;">⚙️ จัดการ</button>`;
+        
         buttonsHtml += `</div>`;
 
         li.innerHTML = headerHtml + detailsHtml + buttonsHtml;
@@ -470,71 +411,100 @@ function displayEquippedItems(equipped = {}) {
 function displayTeammates(currentUserUid) {
     const select = document.getElementById('teammateSelect');
     select.innerHTML = '<option value="">-- เลือกดูข้อมูล --</option>';
+    
+    // 1. ซัมมอนของฉัน (สำคัญ!)
+    for (const key in allEnemiesInRoom) {
+        const en = allEnemiesInRoom[key];
+        // เช็คว่าเป็นซัมมอน และ เจ้าของคือเรา
+        if (en.type === 'player_summon' && en.ownerUid === currentUserUid) {
+            const status = en.hp > 0 ? '' : ' (ตาย)';
+            select.innerHTML += `<option value="${key}" style="color:#00ff00;">🤖 [ซัมมอนของฉัน] ${en.name}${status}</option>`;
+        }
+    }
+
+    // 2. ผู้เล่นคนอื่น
     for (const uid in allPlayersInRoom) {
         if (uid !== currentUserUid) {
-            select.innerHTML += `<option value="${uid}">${allPlayersInRoom[uid].name}</option>`;
+            select.innerHTML += `<option value="${uid}">👤 ${allPlayersInRoom[uid].name} (ผู้เล่น)</option>`;
+        }
+    }
+    
+    // 3. ซัมมอนของเพื่อน
+    for (const key in allEnemiesInRoom) {
+        const en = allEnemiesInRoom[key];
+        if (en.type === 'player_summon' && en.ownerUid !== currentUserUid) {
+            select.innerHTML += `<option value="${key}">🤖 [ซัมมอนเพื่อน] ${en.name}</option>`;
         }
     }
 }
 
 function showTeammateInfo() {
-    const uid = document.getElementById('teammateSelect').value;
+    const id = document.getElementById('teammateSelect').value;
     const infoDiv = document.getElementById('teammateInfo');
     
-    if (!uid) {
+    if (!id) {
         infoDiv.innerHTML = '<p>เลือกเพื่อนร่วมทีมเพื่อดูข้อมูล</p>';
         return;
     }
     
-    const player = allPlayersInRoom[uid];
-    if (player) {
-        // คำนวณค่าต่างๆ แบบ Real-time
-        const finalCon = calculateTotalStat(player, 'CON');
-        const maxHp = calcHPFn(player.race, player.classMain, finalCon);
-        
-        // สร้างรายการสเตตัส
-        let statsHtml = `<div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-top:5px; font-size: 0.9em;">`;
-        ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'].forEach(stat => {
-            const val = calculateTotalStat(player, stat);
-            // เพิ่มสีเขียวถ้ามีบัฟ (เช็คคร่าวๆ จาก ActiveEffects หรือเทียบกับ Base ก็ได้ แต่เอาแบบแสดงค่ารวมเลยดูง่ายสุด)
-            statsHtml += `<div style="background:rgba(0,0,0,0.3); padding:2px; text-align:center; border-radius:3px;">${stat}: <strong>${val}</strong></div>`;
-        });
-        statsHtml += `</div>`;
-
-        // สร้างรายการอุปกรณ์สวมใส่
-        let equipHtml = `<ul style="margin-top:10px; padding-left:15px; font-size:0.85em; color:#ddd;">`;
-        const slots = { mainHand: '⚔️', offHand: '🛡️', head: '🧢', chest: '👕', legs: '👖', feet: '👢' };
-        let hasEquip = false;
-        
-        if (player.equippedItems) {
-            for (const [key, icon] of Object.entries(slots)) {
-                const item = player.equippedItems[key];
-                if (item) {
-                    hasEquip = true;
-                    // แสดงความทนทานถ้ามี
-                    const dura = (item.durability !== undefined) ? ` [${item.durability}%]` : '';
-                    // ไฮไลท์สีถ้าพัง
-                    const style = (item.durability <= 0) ? 'color:#ff4d4d; text-decoration:line-through;' : 'color:#ffc107;';
-                    equipHtml += `<li>${icon} <span style="${style}">${item.name}${dura}</span></li>`;
-                }
-            }
+    let unit = allPlayersInRoom[id];
+    let isSummon = false;
+    
+    if (!unit && allEnemiesInRoom[id]) {
+        unit = allEnemiesInRoom[id];
+        isSummon = true;
+    }
+    
+    if (unit) {
+        if (isSummon) {
+            const hp = unit.hp;
+            const maxHp = unit.maxHp || 100;
+            const str = calculateTotalStat(unit, 'STR');
+            const dex = calculateTotalStat(unit, 'DEX');
+            const con = calculateTotalStat(unit, 'CON');
+            const int = calculateTotalStat(unit, 'INT');
+            
+            // แสดงข้อมูลซัมมอนแบบละเอียด
+            infoDiv.innerHTML = `
+                <div style="border:1px solid #00e676; padding:10px; border-radius:8px; background:rgba(0,0,0,0.4);">
+                    <h3 style="margin:0; color:#00e676;">${unit.name}</h3>
+                    <p style="font-size:0.9em; color:#ccc;">สถานะ: <strong>ซัมมอน</strong></p>
+                    <p style="margin:5px 0;"><strong>HP:</strong> <span style="color:${hp < maxHp*0.3 ? '#ff4d4d' : '#00ff00'};">${hp}</span> / ${maxHp}</p>
+                    
+                    <hr style="border-color:#555; margin:5px 0;">
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; font-size:0.9em;">
+                        <div>STR: <strong>${str}</strong></div> 
+                        <div>DEX: <strong>${dex}</strong></div>
+                        <div>CON: <strong>${con}</strong></div>
+                        <div>INT: <strong>${int}</strong></div>
+                    </div>
+                    <div style="margin-top:5px; font-size:0.85em; color:#aaa;">
+                        (สเตตัสอ้างอิงจากผู้อัญเชิญ)
+                    </div>
+                </div>
+            `;
+        } else {
+            // (ส่วนแสดงข้อมูลผู้เล่น คงเดิม)
+            const finalCon = calculateTotalStat(unit, 'CON');
+            const maxHp = calcHPFn(unit.race, unit.classMain, finalCon);
+            let statsHtml = `<div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-top:5px; font-size: 0.9em;">`;
+            ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'].forEach(stat => {
+                const val = calculateTotalStat(unit, stat);
+                statsHtml += `<div style="background:rgba(0,0,0,0.3); padding:2px; text-align:center; border-radius:3px;">${stat}: <strong>${val}</strong></div>`;
+            });
+            statsHtml += `</div>`;
+            
+            infoDiv.innerHTML = `
+                <div style="border:1px solid #444; padding:10px; border-radius:8px; background:rgba(0,0,0,0.4);">
+                    <h3 style="margin:0 0 5px 0; color:#8be4ff;">${unit.name} <small>(Lv. ${unit.level})</small></h3>
+                    <p style="margin:2px 0;"><strong>HP:</strong> ${unit.hp} / ${maxHp}</p>
+                    <p style="margin:2px 0;"><strong>อาชีพ:</strong> ${unit.classMain}</p>
+                    <hr style="border-color:#555; margin:5px 0;">
+                    <strong>📊 สถานะปัจจุบัน:</strong>
+                    ${statsHtml}
+                </div>
+            `;
         }
-        if(!hasEquip) equipHtml += `<li><em>(ตัวเปล่า)</em></li>`;
-        equipHtml += `</ul>`;
-
-        infoDiv.innerHTML = `
-            <div style="border:1px solid #444; padding:10px; border-radius:8px; background:rgba(0,0,0,0.4);">
-                <h3 style="margin:0 0 5px 0; color:#8be4ff;">${player.name} <small>(Lv. ${player.level})</small></h3>
-                <p style="margin:2px 0;"><strong>HP:</strong> <span style="color:${player.hp < maxHp*0.3 ? '#ff4d4d' : '#00ff00'};">${player.hp}</span> / ${maxHp}</p>
-                <p style="margin:2px 0;"><strong>อาชีพ:</strong> ${player.classMain} / ${player.classSub || '-'}</p>
-                <hr style="border-color:#555; margin:5px 0;">
-                <strong>📊 สถานะปัจจุบัน:</strong>
-                ${statsHtml}
-                <hr style="border-color:#555; margin:5px 0;">
-                <strong>🛡️ อุปกรณ์ที่สวมใส่:</strong>
-                ${equipHtml}
-            </div>
-        `;
     }
 }
 
@@ -577,32 +547,56 @@ function displayEnemies(enemies, currentUserUid) {
     const currentSelection = targetSelect.value;
 
     container.innerHTML = '';
-    targetSelect.innerHTML = '';
-    
+    targetSelect.innerHTML = '<option value="">-- เลือกเป้าหมาย --</option>';
+
+    // Helper functions
+    const badge = (label, val) => `<span style="background:#333; color:#fff; padding:2px 5px; border-radius:3px; margin-right:3px; font-size:0.8em;">${label}:${val}</span>`;
+    const createEffectBadges = (effects) => {
+        if (!effects || effects.length === 0) return '';
+        return effects.map(e => {
+            const color = (e.type === 'BUFF' || e.type === 'HOT') ? '#28a745' : '#dc3545';
+            return `<span style="color:${color}; font-size:0.8em; margin-right:5px;">[${e.name}]</span>`;
+        }).join('');
+    };
+
+    // --- กรณี PvP ---
     if (combatState && combatState.isActive && combatState.type === 'PVP') {
-        // ถ้าเป็น PvP ให้หาคู่ต่อสู้จาก Turn Order
         const opponentUnit = combatState.turnOrder.find(u => u.id !== currentUserUid);
-        
         if (opponentUnit) {
-            // ดึงข้อมูลจริงจาก allPlayersInRoom
             const opponentData = allPlayersInRoom[opponentUnit.id];
             if (opponentData) {
-                const hpText = opponentData.hp <= 0 ? `<span style="color:red;">(พ่ายแพ้)</span>` : `(HP: ${opponentData.hp})`;
+                const isDead = opponentData.hp <= 0;
+                const hpStyle = isDead ? 'color:red;' : 'color:#00ff00;';
+                const hpText = isDead ? '(พ่ายแพ้)' : `${opponentData.hp} / ${opponentData.maxHp || '?'}`;
                 
+                const str = calculateTotalStat(opponentData, 'STR');
+                const dex = calculateTotalStat(opponentData, 'DEX');
+                const con = calculateTotalStat(opponentData, 'CON');
+                const int = calculateTotalStat(opponentData, 'INT');
+                const wis = calculateTotalStat(opponentData, 'WIS');
+                const cha = calculateTotalStat(opponentData, 'CHA');
+
                 container.innerHTML = `
                     <div style="border: 2px solid #ff4d4d; padding: 10px; border-radius: 5px; background: rgba(100,0,0,0.3);">
-                        <h3 style="color: #ff4d4d; margin:0;">VS คู่ประลอง</h3>
-                        <div style="font-size: 1.2em; color: #fff;">${opponentData.name}</div>
-                        <div>${hpText}</div>
+                        <h3 style="color: #ff4d4d; margin:0 0 5px 0;">VS คู่ประลอง</h3>
+                        <div style="font-size: 1.2em; color: #fff; font-weight:bold;">${opponentData.name}</div>
+                        <div style="margin-bottom:5px;">HP: <span style="${hpStyle}">${hpText}</span></div>
+                        <div style="margin-bottom:8px; display:flex; flex-wrap:wrap; gap:2px;">
+                            ${badge('STR', str)} ${badge('DEX', dex)} ${badge('CON', con)}
+                            ${badge('INT', int)} ${badge('WIS', wis)} ${badge('CHA', cha)}
+                        </div>
+                        <div style="font-size:0.85em; color:#ddd;">
+                            <strong>สถานะ:</strong> ${createEffectBadges(opponentData.activeEffects)}
+                        </div>
                     </div>
                 `;
 
-                if (opponentData.hp > 0) {
+                if (!isDead) {
                     const option = document.createElement('option');
-                    option.value = opponentUnit.id; // ใช้ UID ของผู้เล่นเป็น value
+                    option.value = opponentUnit.id;
                     option.textContent = `${opponentData.name} (ผู้เล่น)`;
                     targetSelect.appendChild(option);
-                    targetSelect.value = opponentUnit.id; // เลือกให้อัตโนมัติเลย
+                    targetSelect.value = opponentUnit.id;
                 } else {
                     targetSelect.innerHTML = '<option>-- การประลองจบลง --</option>';
                 }
@@ -610,48 +604,62 @@ function displayEnemies(enemies, currentUserUid) {
         } else {
             container.innerHTML = '<p>รอคู่ต่อสู้...</p>';
         }
-        return; // จบการทำงานของ PvP ตรงนี้เลย ไม่ต้องไปลูป enemies ปกติ
+        return;
     }
 
-    let hasEnemies = false;
+    // --- กรณี PvE (มอนสเตอร์) ---
     let hasLiveEnemies = false;
 
     for (const key in enemies) {
-        const enemy = enemies[key];
-        hasEnemies = true;
-
-        // [FIX] แสดงสถานะ (ตาย) และเปลี่ยนสี
-        const isDead = enemy.hp <= 0;
-        const hpText = isDead ? `<span style="color:red; font-weight:bold;">(ตาย)</span>` : `(HP: ${enemy.hp})`;
-        const nameStyle = isDead ? `color: #888; text-decoration: line-through;` : `color: #ffc107;`;
+        // [FIXED] ดึงข้อมูลดิบมาก่อน เพื่อเช็ค type ที่แท้จริงจาก Database
+        const rawData = enemies[key];
         
-        // 1. แสดงใน Panel รายชื่อ
+        // ถ้า type ใน Database บอกว่าเป็น 'player_summon' ให้ข้ามทันที
+        if (rawData.type === 'player_summon') continue;
+
+        // ถ้าไม่ใช่ซัมมอน ค่อยสร้าง object ใหม่และใส่ default type เป็น enemy (กรณีข้อมูลเก่าไม่มี type)
+        const enemy = { ...rawData };
+        if (!enemy.type) enemy.type = 'enemy';
+
+        const isDead = enemy.hp <= 0;
+        const str = calculateTotalStat(enemy, 'STR');
+        const dex = calculateTotalStat(enemy, 'DEX');
+        const intVal = calculateTotalStat(enemy, 'INT');
+        const wis = calculateTotalStat(enemy, 'WIS');
+        const con = calculateTotalStat(enemy, 'CON');
+
+        const style = isDead ? "opacity:0.5; filter:grayscale(1);" : "border-left: 3px solid #ff4500;";
+        const statusHtml = (enemy.activeEffects || []).map(e => `<span style="color:${e.type.includes('DEBUFF')?'red':'lime'}; font-size:0.8em;">[${e.name}]</span>`).join(' ');
+
         container.innerHTML += `
-            <div style="margin-bottom: 5px; ${isDead ? 'opacity: 0.6;' : ''}">
-                <span style="${nameStyle}">${enemy.name}</span> ${hpText}
+            <div style="background:rgba(0,0,0,0.3); padding:8px; margin-bottom:5px; border-radius:4px; ${style}">
+                <div style="display:flex; justify-content:space-between;">
+                    <strong style="color:#ffc107;">${enemy.name}</strong>
+                    <span style="color:${isDead?'red':'#fff'};">${isDead ? '(ตาย)' : `HP: ${enemy.hp}/${enemy.maxHp}`}</span>
+                </div>
+                ${!isDead ? `
+                <div style="margin-top:5px;">
+                    ${badge('STR', str)} ${badge('DEX', dex)} ${badge('CON', con)}
+                    ${badge('INT', intVal)} ${badge('WIS', wis)}
+                </div>
+                <div style="margin-top:3px; color:#ccc; font-size:0.85em;">สถานะ: ${statusHtml || '-'}</div>
+                ` : ''}
             </div>
         `;
 
-        // 2. แสดงใน Dropdown เลือกเป้าหมาย (เฉพาะตัวเป็น)
         if (!isDead) {
             hasLiveEnemies = true;
-            const option = document.createElement('option');
-            option.value = key;
-            option.textContent = `${enemy.name} (HP: ${enemy.hp})`;
-            targetSelect.appendChild(option);
+            targetSelect.innerHTML += `<option value="${key}">${enemy.name} (${enemy.hp} HP)</option>`;
         }
     }
     
-    if (!hasEnemies) {
-        container.innerHTML = '<p><em>ไม่มีศัตรูในฉาก</em></p>';
-        targetSelect.innerHTML = '<option value="">-- ไม่มีเป้าหมาย --</option>';
-    } else if (!hasLiveEnemies) {
-        targetSelect.innerHTML = '<option value="">-- ศัตรูตายหมดแล้ว --</option>';
-    } else {
-        // พยายามเลือกตัวเดิมที่เคยเลือกไว้
-        if (currentSelection && enemies[currentSelection] && enemies[currentSelection].hp > 0) {
-            targetSelect.value = currentSelection;
-        }
+    if (!hasLiveEnemies && container.innerHTML === '') {
+        container.innerHTML = "<p style='text-align:center; color:#777;'>ไม่มีศัตรู</p>";
+    }
+    
+    // คืนค่า Selection เดิม (ถ้าเป้าหมายยังอยู่และไม่ใช่ซัมมอน)
+    if (currentSelection && enemies[currentSelection] && enemies[currentSelection].hp > 0 && enemies[currentSelection].type !== 'player_summon') {
+        targetSelect.value = currentSelection;
     }
 }
 
@@ -702,11 +710,10 @@ async function playerRollDice() {
 
 // --- Durability Logic ---
 function applyDurabilityDamage(updates, equippedItems, type, options = {}) {
-    console.log(`[Durability] Applying damage type: ${type}`, options);
-    
-    // ⭐ [แก้] ป้องกันกรณีตัวละครถอดของหมด (equippedItems เป็น null/undefined)
+    // ป้องกัน equippedItems เป็น null
     if (!equippedItems) equippedItems = {}; 
 
+    // Helper: สุ่มชิ้นส่วนเกราะที่มีอยู่
     const getRandomArmor = (slots) => {
         const availableSlots = slots.filter(s => equippedItems[s] && (equippedItems[s].durability === undefined || equippedItems[s].durability > 0));
         if (availableSlots.length === 0) return null;
@@ -718,19 +725,21 @@ function applyDurabilityDamage(updates, equippedItems, type, options = {}) {
             const { damageReduced, weaponSlot } = options;
             if (weaponSlot && equippedItems[weaponSlot]) {
                 const item = equippedItems[weaponSlot];
-                const newDura = Math.max(0, (item.durability || 100) - damageReduced);
+                // ลดความทนทานตามความแรงที่รับไว้ (ขั้นต่ำ 1)
+                const damageToDura = Math.ceil(damageReduced / 5) || 1; 
+                const newDura = Math.max(0, (item.durability || 100) - damageToDura);
                 updates[`equippedItems/${weaponSlot}/durability`] = newDura;
             }
             break;
 
         case 'BLOCK_FAIL':
             const { damageTaken } = options;
-            const duraLossArmor = Math.ceil(damageTaken / 2); 
+            // ลดความทนทานเกราะตามดาเมจที่ทะลุมา
+            const duraLossArmor = Math.ceil(damageTaken / 10) || 1; 
             let armorSlots = ['head', 'chest', 'legs', 'feet'];
-            // เช็คว่ามีเกราะให้พังไหม
-            const availableArmor = armorSlots.filter(s => equippedItems[s] && (equippedItems[s].durability === undefined || equippedItems[s].durability > 0));
             
-            const piecesToDamage = availableArmor.length >= 2 ? 2 : 1;
+            // สุ่มพังเกราะ 1-2 ชิ้น
+            const piecesToDamage = Math.random() > 0.5 ? 2 : 1;
             
             for (let i = 0; i < piecesToDamage; i++) {
                 const randomSlot = getRandomArmor(armorSlots); 
@@ -744,18 +753,19 @@ function applyDurabilityDamage(updates, equippedItems, type, options = {}) {
             break;
 
         case 'DODGE':
-            // ⭐ [แก้] เช็คให้ชัวร์ว่ามี equippedItems['feet'] จริงๆ ก่อนใช้งาน
+            // หลบสำเร็จ: รองเท้าสึกนิดหน่อย
             if (equippedItems['feet'] && (equippedItems['feet'].durability === undefined || equippedItems['feet'].durability > 0)) {
                 const item = equippedItems['feet'];
-                const duraLossDodge = 3; 
+                const duraLossDodge = 1; 
                 const newDura = Math.max(0, (item.durability || 100) - duraLossDodge);
                 updates[`equippedItems/feet/durability`] = newDura;
             }
             break;
 
         case 'TAKE_HIT':
+            // รับเต็มๆ: เกราะตัว/ขา สึกหนัก
             const { damageTaken: damageTakenHit } = options; 
-            const duraLossHit = Math.ceil(damageTakenHit / 2); 
+            const duraLossHit = Math.ceil(damageTakenHit / 5) || 1; 
             const randomBodySlot = getRandomArmor(['chest', 'legs']); 
             if (randomBodySlot) {
                 const item = equippedItems[randomBodySlot];
@@ -763,18 +773,6 @@ function applyDurabilityDamage(updates, equippedItems, type, options = {}) {
                 updates[`equippedItems/${randomBodySlot}/durability`] = newDura;
             }
             break;
-    }
-
-    // Update display (Optional)
-    if (equippedItems) {
-       Object.keys(updates).forEach(path => {
-           const parts = path.split('/'); 
-           if(parts.length === 3 && parts[0] === 'equippedItems') {
-               const slot = parts[1];
-               if(equippedItems[slot]) equippedItems[slot].durability = updates[path];
-           }
-       });
-       if (typeof displayEquippedItems === 'function') displayEquippedItems(equippedItems);
     }
 }
 
@@ -812,16 +810,21 @@ async function handlePendingAttack(attackData, playerRef) {
         blockSlot = 'mainHand';
     }
 
+    // [FIX] เพิ่ม Timer 5 วินาที
+    const timerDuration = 5000; 
+
     const swalOptions = {
-        title: `⚠️ คุณถูกโจมตี!`,
+        title: `⚠️ ถูกโจมตี! (ตัดสินใจใน 5 วิ)`,
         html: `
             <div style="text-align: center;">
                 <h3 style="color: #ff4d4d; margin: 0;">${attackData.attackerName}</h3>
-                <p>ค่าโจมตี: <strong>${attackData.attackRollValue}</strong> <small>(AC คุณ: ${acForDisplay})</small></p>
-                <p>ความเสียหาย: <strong style="color: red; font-size: 1.2em;">${initialDamage}</strong></p>
+                <p>ATK: <strong>${attackData.attackRollValue}</strong> vs AC: <strong>${acForDisplay}</strong></p>
+                <p>Dmg: <strong style="color: red; font-size: 1.2em;">${initialDamage}</strong></p>
             </div>
         `,
         icon: 'warning',
+        timer: timerDuration, // จับเวลา
+        timerProgressBar: true,
         
         showConfirmButton: true,
         confirmButtonText: '🛡️ ป้องกัน',
@@ -832,7 +835,7 @@ async function handlePendingAttack(attackData, playerRef) {
         denyButtonColor: '#6c757d',
 
         showCancelButton: true,
-        cancelButtonText: '😑 ไม่ทำอะไร',
+        cancelButtonText: '😑 รับดาเมจ',
         cancelButtonColor: '#dc3545',
 
         allowOutsideClick: false,
@@ -870,28 +873,20 @@ async function handlePendingAttack(attackData, playerRef) {
             return total;
         };
 
-            const dodgeSuccessTitles = ['🏃 หลบพ้น!', '✨ พริ้วมาก!', '💨 วูบเดียว!', '😎 ชิลๆ!'];
-            const dodgeSuccessDescs = ['พริ้วไหว!', 'มองแทบไม่ทัน', 'อ่านทางออกหมด', 'ศัตรูงงเลย'];
-            const dodgeFailTitles = ['🏃 หลบไม่พ้น!', '🤕 โอ๊ย!', '🐌 ช้าไปนิด!', '🦶 สะดุด!'];
-            const dodgeFailDescs = ['เสียหลัก!', 'เต็มๆ เลย', 'ขาตายซะงั้น', 'เกือบพ้นแล้วเชียว'];
-            const blockPerfectTitles = ['🛡️ ป้องกันสมบูรณ์!', '🛡️ เทพแห่งการป้องกัน!', '🛡️ สุดยอดบล็อกเกอร์!', '🛡️ บล็อกได้อย่างแม่นยำ!','🛡️อุ้ย! เหมือนว่าจะโจมตีไม่เข้านะ'];
-            const blockPartialTitles = ['🛡️ ป้องกันได้บางส่วน', '🛡️ โล่เกือบแตก', '🛡️ รับแรงกระแทก', '🛡️ กันได้ไม่หมด','🛡️ อ๊าาาก!! เกราะแตก!!','🛡️ การโจมตีอันแสนร้ายกาจ ทะลุการป้องกันของข้ามาได้อย่างง่ายดาย','🛡️ บ้าน่า! โจมตีเข้างั้นเรอะ!!','🛡️ รุนแรงเกินที่จะป้องกันได้','🛡️ อึก! ไม่ไหว~'];
-            const isnoneblock = ['😑 โดนเต็มๆ','😵 ถูกโจมตีไม่ยั้ง','😖 ถูกโจมตีโดยไม่ทันตั้งตัว','🫣 โดนโจมตีทีเผลอ','😯 ยืนรับการโจมตีอย่างองอาจ','😫 รุนแรงเกินไปแล้ว!!','😱 อ๊าาาาก!!','🥴 แค่นี้ยังไหว~ คิดว่านะ','🙄 ลาก่อนนะสหาย','😇 เค้าไปก่อนนะ ลาก่อน~','🤕 อะเฮื้อ~ บาดเจ็บสาหัส','🤕 ไม่น่าประมาทเลย'];
-
-
         let defenseResponse = { 
             defenderUid: playerRef.key, 
             attackerKey: attackData.attackerKey, 
             attackRollValue: attackData.attackRollValue,
             damageTaken: 0 
         };
-        let feedbackTitle = '', feedbackHtml = '';
+        
         const roomId = sessionStorage.getItem('roomId');
         const updates = {};
         
+        // Logic การเลือก
         if (result.isConfirmed) { 
+            // --- กดป้องกัน ---
             const blockRoll = await rollDiceAndAnimate(20);
-            
             const totalCon = calculateTotalStat(playerData, 'CON');
             const conBonus = getStatBonusFn(totalCon);
             const totalBlock = blockRoll + conBonus;
@@ -907,19 +902,17 @@ async function handlePendingAttack(attackData, playerRef) {
             updates[`skillCooldowns/action_block`] = { type: 'PERSONAL', turnsLeft: 2 };
 
             if (damageTaken <= 0) {
-                feedbackTitle = getRandomWord(blockPerfectTitles);
-                feedbackHtml = `รับไว้ได้ทั้งหมด! (ลด ${damageReduction})`;
                 applyDurabilityDamage(updates, playerData.equippedItems, 'BLOCK_SUCCESS', { damageReduced: initialDamage, weaponSlot: blockSlot });
+                Swal.fire({ title: '🛡️ ป้องกันสมบูรณ์!', text: `รับไว้ได้ทั้งหมด! (ลด ${damageReduction})`, icon: 'success', timer: 1500, showConfirmButton: false });
             } else {
-                feedbackTitle = getRandomWord(blockPartialTitles);
-                feedbackHtml = `ลดไป ${damageReduction} (โดน <strong>${damageTaken}</strong>)`;
                 applyDurabilityDamage(updates, playerData.equippedItems, 'BLOCK_SUCCESS', { damageReduced: damageReduction, weaponSlot: blockSlot });
                 applyDurabilityDamage(updates, playerData.equippedItems, 'BLOCK_FAIL', { damageTaken });
+                Swal.fire({ title: '🛡️ ป้องกันบางส่วน', html: `ลดไป ${damageReduction} (โดน <strong>${damageTaken}</strong>)`, icon: 'warning', timer: 1500, showConfirmButton: false });
             }
 
         } else if (result.isDenied) { 
+            // --- กดหลบหลีก ---
             const dodgeRoll = await rollDiceAndAnimate(20);
-
             const totalDex = calculateTotalStat(playerData, 'DEX');
             const dexBonus = getStatBonusFn(totalDex);
             const totalDodge = dodgeRoll + dexBonus;
@@ -927,81 +920,266 @@ async function handlePendingAttack(attackData, playerRef) {
 
             defenseResponse.choice = 'dodge';
             defenseResponse.roll = totalDodge;
-            
             updates[`skillCooldowns/action_dodge`] = { type: 'PERSONAL', turnsLeft: 2 };
             applyDurabilityDamage(updates, playerData.equippedItems, 'DODGE', {});
 
             if (isDodgeSuccess) {
-            // สุ่มหัวข้อและคำบรรยาย
-            feedbackTitle = getRandomWord(dodgeSuccessTitles);
-            const randomDesc = getRandomWord(dodgeSuccessDescs);
-
-            // นำคำที่สุ่มได้ มาต่อกับค่าตัวเลขเดิม
-            feedbackHtml = `${randomDesc} (${totalDodge} vs ${attackData.attackRollValue})`;
-            
-            defenseResponse.damageTaken = 0;
-            defenseResponse.success = true;
-
-        } else {
-            // สุ่มหัวข้อและคำบรรยาย
-            feedbackTitle = getRandomWord(dodgeFailTitles);
-            const randomDesc = getRandomWord(dodgeFailDescs);
-
-            // นำคำที่สุ่มได้ มาต่อกับค่าตัวเลขและความเสียหาย
-            feedbackHtml = `${randomDesc} (${totalDodge} vs ${attackData.attackRollValue})<br>โดน <strong>${initialDamage}</strong>`;
-            
-            defenseResponse.damageTaken = initialDamage;
-            defenseResponse.success = false;
-            applyDurabilityDamage(updates, playerData.equippedItems, 'BLOCK_FAIL', { damageTaken: initialDamage });
-        }
+                defenseResponse.damageTaken = 0;
+                defenseResponse.success = true;
+                Swal.fire({ title: '🏃 หลบพ้น!', text: `พริ้วไหว! (${totalDodge} vs ${attackData.attackRollValue})`, icon: 'success', timer: 1500, showConfirmButton: false });
+            } else {
+                defenseResponse.damageTaken = initialDamage;
+                defenseResponse.success = false;
+                applyDurabilityDamage(updates, playerData.equippedItems, 'BLOCK_FAIL', { damageTaken: initialDamage });
+                Swal.fire({ title: '🏃 หลบไม่พ้น!', html: `เสียหลัก! (${totalDodge} vs ${attackData.attackRollValue})<br>โดน <strong>${initialDamage}</strong>`, icon: 'error', timer: 1500, showConfirmButton: false });
+            }
 
         } else { 
+            // --- หมดเวลา หรือ กดรับดาเมจ ---
+            // (DismissReason.timer หมายถึงหมดเวลา)
             defenseResponse.choice = 'none';
-            feedbackTitle = getRandomWord(isnoneblock);
-            feedbackHtml = `รับความเสียหาย <strong>${initialDamage}</strong>`;
             defenseResponse.damageTaken = initialDamage;
             applyDurabilityDamage(updates, playerData.equippedItems, 'TAKE_HIT', { damageTaken: initialDamage });
+            
+            const msg = (result.dismiss === Swal.DismissReason.timer) ? 'หมดเวลาตัดสินใจ!' : 'ยืนรับดาเมจ!';
+            Swal.fire({ title: '😑 โดนเต็มๆ', html: `${msg}<br>รับความเสียหาย <strong>${initialDamage}</strong>`, icon: 'error', timer: 1500, showConfirmButton: false });
         }
-
-        Swal.fire({ title: feedbackTitle, html: feedbackHtml, icon: 'info', timer: 3500, showConfirmButton: false });
         
+        // อัปเดต HP และ DB
         const currentSnap = await playerRef.get();
         const currentData = currentSnap.val();
         const newHp = Math.max(0, (currentData.hp || 0) - defenseResponse.damageTaken);
-        
         updates['hp'] = newHp;
 
-       if (Object.keys(updates).length > 0) await playerRef.update(updates);
-        
+        if (Object.keys(updates).length > 0) await playerRef.update(updates);
         await playerRef.child('pendingAttack').remove();
 
+        // ส่งผลลัพธ์กลับไปให้ DM (ถ้าไม่ใช่ PvP)
         if (!attackData.isPvP) {
             const resolutionData = {
                 attackerKey: attackData.attackerKey,
                 defenderUid: playerRef.key,
-                choice: defenseResponse.choice, // block, dodge, none
+                choice: defenseResponse.choice,
                 roll: defenseResponse.roll || 0,
                 success: defenseResponse.success || false,
                 damageReduced: defenseResponse.damageReduced || 0,
                 damageTaken: defenseResponse.damageTaken
             };
-            
-            // ส่งข้อมูลไปที่ combat/resolution
             const roomId = sessionStorage.getItem('roomId');
             await db.ref(`rooms/${roomId}/combat/resolution`).set(resolutionData);
         }
         
+        // ถ้าเป็น PvP ให้จบเทิร์นฝ่ายโจมตี
         if (attackData.isPvP) {
             const roomId = sessionStorage.getItem('roomId');
-            // ส่งสัญญาณบอกระบบว่า "เทิร์นของผู้โจมตี (attackerKey) จบแล้วนะ"
-            // await db.ref(`rooms/${roomId}/combat/actionComplete`).set(attackData.attackerKey);
-
             if (typeof advanceCombatTurn === 'function') {
                 await advanceCombatTurn(roomId);
             }
         }
     });
 }
+
+async function openItemOptions(index) {
+    const item = currentCharacterData.inventory[index];
+    if (!item) return;
+
+    // ถ้าไม่มีราคา ให้ตั้งเป็น 0
+    const itemPrice = parseInt(item.price) || 0;
+    const sellPrice = Math.floor(itemPrice / 2);
+    
+    // แสดง Popup
+    const result = await Swal.fire({
+        title: `จัดการ: ${item.name}`,
+        html: `เลือกสิ่งที่คุณต้องการทำกับไอเทมนี้`,
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: '🎁 ส่งให้เพื่อน',
+        denyButtonText: `💰 ขาย (${sellPrice} GP)`,
+        cancelButtonText: '🗑️ ทิ้ง', // ปุ่ม Cancel ทำหน้าที่เป็นปุ่มทิ้ง
+        confirmButtonColor: '#17a2b8',
+        denyButtonColor: '#28a745',
+        cancelButtonColor: '#dc3545'
+    });
+
+    // [FIX] เช็คผลลัพธ์ให้ถูกต้องตาม SweetAlert2 Documentation
+    if (result.isConfirmed) { 
+        // กดปุ่ม Confirm (ส่งให้เพื่อน)
+        transferItemSelection(index);
+    } 
+    else if (result.isDenied) {
+        // กดปุ่ม Deny (ขาย)
+        if (sellPrice === 0) {
+            // ถ้าขายได้ 0 ให้ถามย้ำว่าจะทิ้งไหม หรือขายฟรี
+            const confirmSell = await Swal.fire({
+                title: 'ขายฟรี?',
+                text: "ไอเทมนี้ไม่มีราคาขาย คุณจะได้ 0 GP",
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'ขายเลย (ทิ้ง)',
+                cancelButtonText: 'ยกเลิก'
+            });
+            if (confirmSell.isConfirmed) sellItem(index, 0);
+        } else {
+            sellItem(index, sellPrice);
+        }
+    } 
+    else if (result.dismiss === Swal.DismissReason.cancel) {
+        // [FIX] กดปุ่ม Cancel (ทิ้ง) - เช็คแบบนี้ถึงจะถูก
+        dropItem(index);
+    }
+}
+
+async function dropItem(index) {
+    const confirm = await Swal.fire({
+        title: 'ยืนยันการทิ้ง?',
+        text: "ไอเทมจะหายไปถาวร!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'ทิ้งเลย',
+        confirmButtonColor: '#dc3545'
+    });
+
+    if (confirm.isConfirmed) {
+        const roomId = sessionStorage.getItem('roomId');
+        const uid = localStorage.getItem('currentUserUid');
+        const playerRef = db.ref(`rooms/${roomId}/playersByUid/${uid}`);
+        
+        await playerRef.transaction(data => {
+            if (!data || !data.inventory) return data;
+            
+            // เช็คว่า Index ยังถูกต้องไหม
+            if (!data.inventory[index]) return data;
+
+            const item = data.inventory[index];
+            if (item.quantity > 1) {
+                item.quantity--;
+            } else {
+                // ลบออกจาก Array
+                data.inventory.splice(index, 1);
+            }
+            return data;
+        });
+        showAlert('ทิ้งไอเทมเรียบร้อย', 'success');
+    }
+}
+
+async function sellItem(index, price) {
+    const roomId = sessionStorage.getItem('roomId');
+    const uid = localStorage.getItem('currentUserUid');
+    const playerRef = db.ref(`rooms/${roomId}/playersByUid/${uid}`);
+
+    await playerRef.transaction(data => {
+        if (!data || !data.inventory) return data;
+        if (!data.inventory[index]) return data;
+
+        const item = data.inventory[index];
+        
+        // เพิ่มเงิน
+        data.gp = (data.gp || 0) + price;
+        
+        // ลบของ
+        if (item.quantity > 1) {
+            item.quantity--;
+        } else {
+            data.inventory.splice(index, 1);
+        }
+        
+        return data;
+    });
+    
+    showAlert(`ขายไอเทมได้เงิน ${price} GP`, 'success');
+}
+
+async function transferItemSelection(index) {
+    const options = {};
+    const myUid = localStorage.getItem('currentUserUid');
+    
+    for (const uid in allPlayersInRoom) {
+        if (uid !== myUid) {
+            options[uid] = allPlayersInRoom[uid].name;
+        }
+    }
+
+    if (Object.keys(options).length === 0) {
+        return showAlert('ไม่พบเพื่อนร่วมทีมในห้อง', 'warning');
+    }
+
+    const { value: targetUid } = await Swal.fire({
+        title: 'ส่งให้ใคร?',
+        input: 'select',
+        inputOptions: options,
+        inputPlaceholder: 'เลือกผู้รับ',
+        showCancelButton: true
+    });
+
+    if (targetUid) {
+        transferItem(index, targetUid, options[targetUid]);
+    }
+}
+
+async function transferItem(index, targetUid, targetName) {
+    const roomId = sessionStorage.getItem('roomId');
+    const myUid = localStorage.getItem('currentUserUid');
+    const myRef = db.ref(`rooms/${roomId}/playersByUid/${myUid}`);
+    const targetRef = db.ref(`rooms/${roomId}/playersByUid/${targetUid}`);
+
+    showLoading(`กำลังส่งของให้ ${targetName}...`);
+
+    try {
+        // 1. ดึงข้อมูลไอเทมจากเราก่อน (Transaction เพื่อความชัวร์ว่ามีของ)
+        let itemToSend = null;
+        
+        await myRef.transaction(data => {
+            if (!data || !data.inventory || !data.inventory[index]) return data;
+            
+            // Clone Item
+            itemToSend = JSON.parse(JSON.stringify(data.inventory[index]));
+            itemToSend.quantity = 1; // ส่งทีละ 1 ชิ้น
+
+            // ลดจำนวนของในตัวเรา
+            if (data.inventory[index].quantity > 1) {
+                data.inventory[index].quantity--;
+            } else {
+                data.inventory.splice(index, 1);
+            }
+            return data;
+        });
+
+        if (!itemToSend) throw new Error("ไม่พบไอเทม หรือเกิดข้อผิดพลาด");
+
+        // 2. เอาของไปใส่ให้เพื่อน
+        await targetRef.transaction(data => {
+            if (!data) return data;
+            if (!data.inventory) data.inventory = [];
+
+            // เช็ค Stack (ถ้าไอเทมเหมือนกันให้รวมกอง)
+            // (ต้องไม่มีโบนัสพิเศษ หรือเป็นของใช้ทั่วไป)
+            const isStackable = ['ทั่วไป', 'บริโภค'].includes(itemToSend.itemType);
+            
+            let found = false;
+            if (isStackable) {
+                const existing = data.inventory.find(i => i.name === itemToSend.name);
+                if (existing) {
+                    existing.quantity++;
+                    found = true;
+                }
+            }
+            
+            if (!found) {
+                data.inventory.push(itemToSend);
+            }
+            return data;
+        });
+
+        hideLoading();
+        showAlert(`ส่ง ${itemToSend.name} ให้ ${targetName} แล้ว!`, 'success');
+
+    } catch (error) {
+        hideLoading();
+        showAlert('การส่งของล้มเหลว: ' + error.message, 'error');
+    }
+}
+
 // --- Initializer ---
 firebase.auth().onAuthStateChanged(user => {
     if (user) {
@@ -1015,6 +1193,30 @@ firebase.auth().onAuthStateChanged(user => {
         injectDashboardStyles();
 
         const playerRef = db.ref(`rooms/${roomId}/playersByUid/${currentUserUid}`);
+        const roomRef = db.ref(`rooms/${roomId}`); // [เพิ่ม] reference ของห้อง
+
+        // [FIX] เพิ่ม Listener สำหรับ Combat Log เพื่อแสดง Toast แจ้งเตือน
+        roomRef.child('combatLogs').limitToLast(1).on('child_added', snapshot => {
+            const log = snapshot.val();
+            // เช็คเวลาว่า Log นี้เพิ่งเกิดหรือเปล่า (ภายใน 5 วินาที) เพื่อไม่ให้แจ้งเตือนเก่าเด้ง
+            if (log && log.timestamp > (Date.now() - 5000)) { 
+                const Toast = Swal.mixin({
+                    toast: true, position: 'top-end', showConfirmButton: false, timer: 3000,
+                    background: 'rgba(0, 0, 0, 0.9)', color: '#fff',
+                    didOpen: (toast) => {
+                        toast.addEventListener('mouseenter', Swal.stopTimer)
+                        toast.addEventListener('mouseleave', Swal.resumeTimer)
+                    }
+                });
+                
+                let icon = 'info';
+                if (log.message.includes('โจมตี')) icon = 'warning'; // สีเหลือง
+                if (log.message.includes('พลาด')) icon = 'error'; // สีแดง
+                if (log.message.includes('เข้า')) icon = 'success'; // สีเขียว
+
+                Toast.fire({ icon: icon, title: log.message });
+            }
+        });
 
         db.ref(`rooms/${roomId}`).on('value', snapshot => {
             const roomData = snapshot.val() || {};
@@ -1031,7 +1233,10 @@ firebase.auth().onAuthStateChanged(user => {
                 displayEquippedItems(currentCharacterData.equippedItems);
                 displayQuest(currentCharacterData.quest);
                 displayTeammates(currentUserUid); 
+                
+                // [FIX] ส่งฟังก์ชันกรองซัมมอนไปทำงานใน displayEnemies
                 displayEnemies(allEnemiesInRoom, currentUserUid);
+                
                 updateTurnDisplay(combatState, currentUserUid);
                 displayStory(roomData.story);
 
@@ -1064,4 +1269,19 @@ firebase.auth().onAuthStateChanged(user => {
     } else {
         window.location.replace('login.html');
     }
-}); 
+
+    playerRef.child('pendingAttack').on('value', s => {
+            const val = s.val();
+            
+            if (val && !Swal.isVisible()) {
+                handlePendingAttack(val, playerRef);
+            } 
+            
+            else if (!val && Swal.isVisible()) {
+                const titleEl = Swal.getTitle();
+                if (titleEl && titleEl.textContent.includes('ถูกโจมตี')) {
+                    Swal.close(); 
+                }
+            }
+        });
+});

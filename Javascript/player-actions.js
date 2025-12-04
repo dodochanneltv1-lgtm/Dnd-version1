@@ -352,6 +352,8 @@ async function useSkillOnTarget(skillId, targetId, options = {}) {
 
     const combatSnap = await db.ref(`rooms/${roomId}/combat`).get();
     const currentCombatState = combatSnap.val() || {};
+    
+    // เช็คเทิร์น (ถ้าอยู่ใน Combat)
     if (currentCombatState.isActive && currentCombatState.turnOrder[currentCombatState.currentTurnIndex].id !== casterUid) {
         return showAlert('ยังไม่ถึงเทิร์นของคุณ!', 'warning');
     }
@@ -360,6 +362,7 @@ async function useSkillOnTarget(skillId, targetId, options = {}) {
     if (!casterData) { showAlert('ไม่พบข้อมูลผู้ใช้ปัจจุบัน!', 'error'); return; } 
     if (!casterData.uid) casterData.uid = casterUid; 
     
+    // ค้นหาสกิลจากทุกแหล่ง (Main, Sub, Race)
     let combinedSkills = [];
     if (typeof SKILL_DATA !== 'undefined') {
         if (casterData.classMain && SKILL_DATA[casterData.classMain]) combinedSkills.push(...(SKILL_DATA[casterData.classMain] || []));
@@ -380,38 +383,55 @@ async function useSkillOnTarget(skillId, targetId, options = {}) {
     const casterRef = db.ref(`rooms/${roomId}/playersByUid/${casterUid}`); 
     let targetData = null; 
     let targetRef = null;
-    let targetType = 'single';
+    let targetType = 'single'; // single, enemy_all, teammate_all
 
-    if (skill.targetType === 'self' || targetId === casterUid) { 
-        targetData = { ...casterData }; if(!targetData.type) targetData.type = 'player'; 
+    // -------------------------------------------------------------
+    // [แก้ไข Logic การเลือกเป้าหมายให้ถูกต้อง]
+    // -------------------------------------------------------------
+
+    // กรณี 1: สกิลหมู่ (AoE / All)
+    if (skill.targetType.includes('_all') || skill.targetType.includes('_aoe') || skill.targetType === 'all') { 
+         
+         Swal.fire({ title: `กำลังร่าย ${skill.name}...`, text: `เป้าหมาย: พื้นที่ทั้งหมด!`, icon: 'info', timer: 1500 });
+         
+         if (skill.targetType.includes('enemy')) targetType = 'enemy_all';
+         else if (skill.targetType.includes('teammate')) targetType = 'teammate_all';
+         else targetType = 'all'; // เช่น Demon Lord Skill
+    } 
+    // กรณี 2: สกิลใส่ตัวเอง
+    else if (skill.targetType === 'self' || targetId === casterUid) { 
+        targetData = { ...casterData }; 
+        if(!targetData.type) targetData.type = 'player'; 
         targetRef = casterRef; 
     }
+    // กรณี 3: สกิลใส่ศัตรู (เดี่ยว)
     else if (skill.targetType.includes('enemy')) { 
-        if(skill.targetType.includes('_all')) targetType = 'enemy_all';
-        targetData = (typeof allEnemiesInRoom !== 'undefined' && allEnemiesInRoom) ? allEnemiesInRoom[targetId] : null; 
-        if (!targetData && targetType === 'single') { showAlert('ไม่พบข้อมูลเป้าหมายศัตรู!', 'error'); return; } 
-        if(targetData) {
-             targetData = { ...targetData }; if(!targetData.type) targetData.type = 'enemy'; 
-             targetRef = db.ref(`rooms/${roomId}/enemies/${targetId}`); 
+        if (currentCombatState.type === 'PVP') {
+            targetData = (typeof allPlayersInRoom !== 'undefined') ? allPlayersInRoom[targetId] : null;
+            if (!targetData) { showAlert('ไม่พบข้อมูลคู่ต่อสู้ (PvP)!', 'error'); return; }
+            targetData = { ...targetData, type: 'player' }; 
+            targetRef = db.ref(`rooms/${roomId}/playersByUid/${targetId}`); 
+        } else {
+            targetData = (typeof allEnemiesInRoom !== 'undefined') ? allEnemiesInRoom[targetId] : null; 
+            if (!targetData) { showAlert('ไม่พบข้อมูลมอนสเตอร์!', 'error'); return; } 
+            targetData = { ...targetData, type: 'enemy' }; 
+            targetRef = db.ref(`rooms/${roomId}/enemies/${targetId}`); 
         }
     }
-    else if (skill.targetType.includes('teammate')) { 
-        if(skill.targetType.includes('_all')) targetType = 'teammate_all';
-        if (skill.id.includes('cleric_heal') && targetId === casterUid) {
-            return showAlert('นักบวช/นักบุญหญิง ไม่สามารถฮีลตัวเองได้!', 'warning');
-        }
-        targetData = (typeof allPlayersInRoom !== 'undefined' && allPlayersInRoom) ? allPlayersInRoom[targetId] : null; 
-        if (!targetData && targetType === 'single') { showAlert('ไม่พบข้อมูลเป้าหมายเพื่อนร่วมทีม!', 'error'); return; } 
-        if(targetData) {
-            targetData = { ...targetData }; if(!targetData.type) targetData.type = 'player'; 
-            targetRef = db.ref(`rooms/${roomId}/playersByUid/${targetId}`); 
-        }
+    // กรณี 4: สกิลใส่เพื่อน (เดี่ยว)
+    else if (skill.targetType.includes('teammate')) {
+        targetData = (typeof allPlayersInRoom !== 'undefined') ? allPlayersInRoom[targetId] : null;
+        if (!targetData) { showAlert('ไม่พบข้อมูลเพื่อนร่วมทีม!', 'error'); return; }
+        targetData = { ...targetData, type: 'player' };
+        targetRef = db.ref(`rooms/${roomId}/playersByUid/${targetId}`);
     }
     
+    // ตรวจสอบ Cooldown
     const cdError = checkCooldown(casterData, skill); 
     if (cdError) { showAlert(cdError, 'warning'); return; }
 
     try {
+        // ทอยความสำเร็จ (Success Roll) ถ้ามี
         const { success, rollData } = await performSuccessRoll(casterData, targetData, skill, options); 
         if (!success) { 
             await setCooldown(casterRef, skill, true); 
@@ -422,26 +442,54 @@ async function useSkillOnTarget(skillId, targetId, options = {}) {
         let skillOutcome = null;
         const effectOptions = { ...options, rollData: rollData };
         
-        if (targetType === 'enemy_all' || targetType === 'teammate_all' || skill.targetType === 'teammate_all_self') {
-            const allTargets = (targetType === 'enemy_all') ? allEnemiesInRoom : allPlayersInRoom;
-            for (const tId in allTargets) {
-                if (targetType.includes('teammate') && tId === casterUid && skill.id.includes('cleric_heal')) continue;
-                if (skill.targetType === 'teammate_all' && tId === casterUid) continue;
-                
-                const tData = { ...allTargets[tId], type: (targetType === 'enemy_all' ? 'enemy' : 'player') };
-                const loopTargetRef = db.ref(`rooms/${roomId}/${targetType === 'enemy_all' ? 'enemies' : 'playersByUid'}/${tId}`);
-                await applyEffect(casterRef, loopTargetRef, casterData, tData, skill, effectOptions);
+        // -------------------------------------------------------------
+        // [แก้ไข Logic การ Apply Effect]
+        // -------------------------------------------------------------
+
+        // ถ้าเป็นสกิลหมู่ -> วนลูปใส่ทุกคน
+        if (targetType === 'enemy_all' || targetType === 'teammate_all' || targetType === 'all') {
+            const targetsToHit = [];
+            
+            // รวมเป้าหมายตามประเภท
+            if (targetType === 'enemy_all' || targetType === 'all') {
+                if (currentCombatState.type === 'PVP') {
+                    // PvP AoE: ศัตรูคือทุกคนที่ไม่ใช่เรา
+                    for (const pid in allPlayersInRoom) {
+                        if (pid !== casterUid) targetsToHit.push({ id: pid, type: 'player', refPath: 'playersByUid' });
+                    }
+                } else {
+                    // PvE AoE: ศัตรูคือมอนสเตอร์
+                    for (const eid in allEnemiesInRoom) {
+                        targetsToHit.push({ id: eid, type: 'enemy', refPath: 'enemies' });
+                    }
+                }
             }
-            skillOutcome = { statusApplied: `ส่งผลต่อเป้าหมายทั้งหมด` };
+            if (targetType === 'teammate_all' || targetType === 'all') {
+                for (const pid in allPlayersInRoom) {
+                    if (skill.targetType === 'teammate_all' && pid === casterUid) continue; // บางสกิลไม่รวมตัวเอง
+                    targetsToHit.push({ id: pid, type: 'player', refPath: 'playersByUid' });
+                }
+            }
+
+            // วนลูปยิง Effect
+            for (const t of targetsToHit) {
+                const tData = (t.type === 'player' ? allPlayersInRoom[t.id] : allEnemiesInRoom[t.id]);
+                const tRef = db.ref(`rooms/${roomId}/${t.refPath}/${t.id}`);
+                await applyEffect(casterRef, tRef, casterData, { ...tData, type: t.type }, skill, effectOptions);
+            }
+            skillOutcome = { statusApplied: `ส่งผลต่อเป้าหมายทั้งหมด (${targetsToHit.length} ตัว)` };
             
         } else if (targetRef) {
+            // สกิลเดี่ยว -> ยิงใส่เป้าหมายเดียว
             skillOutcome = await applyEffect(casterRef, targetRef, casterData, targetData, skill, effectOptions);
         }
 
+        // Effect เสริมใส่ตัวเอง (เช่น ลดเลือดคนร่าย)
         if (skill.selfEffect) {
             await applyEffect(casterRef, casterRef, casterData, casterData, { ...skill, effect: skill.selfEffect }, effectOptions);
         }
         
+        // แสดงผลลัพธ์
         const isSelfBuff = (skill.targetType === 'self' && (skill.skillType === 'BUFF' || skill.skillType === 'BUFF_DEBUFF'));
 
         Swal.fire({
@@ -452,8 +500,10 @@ async function useSkillOnTarget(skillId, targetId, options = {}) {
             showConfirmButton: false
         });
         
+        // ติด Cooldown
         await setCooldown(casterRef, skill, false);
 
+        // จบเทิร์น (ยกเว้นสกิลบัฟตัวเอง)
         if (isSelfBuff) {
             const indicator = document.getElementById('turnIndicator');
             if(indicator) {
@@ -468,28 +518,33 @@ async function useSkillOnTarget(skillId, targetId, options = {}) {
     } catch (error) { 
         console.error("Error applying skill effect:", error); 
         showAlert('เกิดข้อผิดพลาดร้ายแรง: ' + error.message, 'error'); 
-        await endPlayerTurn(casterUid, roomId); 
+        // await endPlayerTurn(casterUid, roomId); // เอาออกเผื่ออยากลองใหม่
     }
 }
 
+
 /* ฟังก์ชันหลักในการใช้สกิล (Apply Skill Effect) */
 async function applyEffect(casterRef, targetRef, casterData, targetData, skill, options = {}) {
+    // [FIX] ประกาศ roomId ด้านนอกเพื่อให้มั่นใจว่ามีค่า
+    const roomId = sessionStorage.getItem('roomId');
     const effect = skill.effect;
     let outcome = { damageDealt: 0, healAmount: 0, statusApplied: null };
 
     await targetRef.transaction(currentData => {
         if (currentData === null) return;
          
+         // (ส่วน Init Data คงเดิม...)
          if (!currentData.type) currentData.type = targetData.type;
          if (!currentData.race && targetData.type === 'player') currentData.race = targetData.race;
          if (!currentData.classMain && targetData.type === 'player') currentData.classMain = targetData.classMain;
          if (!currentData.stats) currentData.stats = { ...(targetData.stats || {}) };
          if (!currentData.activeEffects) currentData.activeEffects = [];
 
+        // (ส่วนกำหนด duration/amount คงเดิม...)
         const duration = effect.duration || (effect.durationDice ? (Math.floor(Math.random() * parseInt(effect.durationDice.replace('d', ''))) + 1) : 3);
         const amount = effect.amount || (effect.amountDice ? (Math.floor(Math.random() * parseInt(effect.amountDice.replace('d', ''))) + 1) : 0);
         
-        // 1. คำนวณ HP Ratio ก่อนบัฟ
+        // (ส่วนคำนวณ HP Ratio คงเดิม...)
         let oldMaxHp = 0;
         let hpRatio = 0;
         let conChangedInTransaction = false; 
@@ -499,10 +554,13 @@ async function applyEffect(casterRef, targetRef, casterData, targetData, skill, 
             oldMaxHp = calculateHP(currentData.race, currentData.classMain, currentFinalCon_Before);
             hpRatio = oldMaxHp > 0 ? ((currentData.hp || 0) / oldMaxHp) : 0;
         } else {
-            oldMaxHp = currentData.maxHp || 100; // (Enemy)
+            oldMaxHp = currentData.maxHp || 100;
         }
 
-        function applyBuffDebuff() {
+        // [Sub-functions]
+        function applyBuffDebuff() { /* ... โค้ดเดิม ... */ 
+            // (ใส่โค้ด applyBuffDebuff เดิมของคุณตรงนี้ หรือใช้ของเดิมในไฟล์ได้เลย ไม่ต้องแก้)
+            // เพื่อความกระชับ ผมละไว้ฐานที่เข้าใจว่าเหมือนเดิม
             switch(effect.type) {
                 case 'ALL_TEMP_STAT_PERCENT': 
                 case 'MULTI_TEMP_STAT_PERCENT':
@@ -547,9 +605,8 @@ async function applyEffect(casterRef, targetRef, casterData, targetData, skill, 
                     break;
             }
         }
-        
-        function applyHealing() {
-            // (Heal ใช้ CurrentHP เดิม + ฮีล ไม่สน Ratio)
+        function applyHealing() { /* ... โค้ดเดิม ... */ 
+             // (Heal ใช้ CurrentHP เดิม + ฮีล ไม่สน Ratio)
             const currentTheoreticalMaxHp = currentData.maxHp || oldMaxHp;
             const isUndead = currentData.race === 'อันเดด';
             const wisBonus = getStatBonus(calculateTotalStat(casterData, 'WIS'));
@@ -572,8 +629,7 @@ async function applyEffect(casterRef, targetRef, casterData, targetData, skill, 
                 outcome.healAmount = healedHp; 
             }
         }
-        
-        function applyFormulaDamage() {
+        function applyFormulaDamage() { /* ... โค้ดเดิม ... */ 
             let damage = 0;
             const targetCurrentHp = currentData.hp || 0;
             const targetMaxHp = currentData.maxHp || oldMaxHp;
@@ -584,7 +640,7 @@ async function applyEffect(casterRef, targetRef, casterData, targetData, skill, 
             const casterWIS = getStatBonus(calculateTotalStat(casterData, 'WIS'));
 
             switch(effect.formula) {
-                case 'GOD_JUDGMENT': damage = (targetCurrentHp < targetMaxHp * 0.50) ? targetCurrentHp : Math.floor(targetMaxHp * 0.75); outcome.statusApplied = "การพิพากษาแห่งพระเจ้า!"; break;
+                case 'GOD_JUDGMENT': damage = (targetCurrentHp < targetMaxHp * 0.50) ? targetCurrentHp : Math.floor(targetMaxHp); outcome.statusApplied = "การพิพากษาแห่งพระเจ้า!"; break;
                 case 'ARCHSAGE_JUDGMENT': damage = targetCurrentHp; outcome.statusApplied = `พิพากษาต้องห้าม (ทอย ${casterRoll})!`; options.selfEffect = { type: 'PERMANENT_MAXHP_LOSS_PERCENT', amount: 5 }; break;
                 case 'HOLY_LADY_JUDGMENT': damage = Math.floor(targetCurrentHp * 0.50); outcome.statusApplied = "การพิพากษาสตรีศักดิ์สิทธิ์ (ลดเลือด 50%)"; break;
                 case 'DL_DARK_WAVE': 
@@ -613,16 +669,24 @@ async function applyEffect(casterRef, targetRef, casterData, targetData, skill, 
                     break;
             }
             currentData.hp = (currentData.hp || 0) - damage; 
+            if (effect.formula === 'GOD_JUDGMENT') {
+                currentData.hp = 0;
+            }
             outcome.damageDealt = damage;
         }
 
         function applySpecialLogic() {
+            // [FIX] ดึง roomId จากตัวแปร scope ด้านบนโดยตรง (ปลอดภัยกว่า)
             switch(effect.type) {
                 case 'CONTROL': case 'CONTROL_BUFF':
                     if (effect.status === 'TAUNT') { currentData.activeEffects.push({ skillId: skill.id, name: skill.name, type: 'TAUNT', taunterUid: casterData.uid, turnsLeft: duration }); outcome.statusApplied = `ยั่วยุ (${duration} เทิร์น)`; } break;
                 case 'DOT': case 'DOT_AREA':
                     currentData.activeEffects.push({ skillId: skill.id, name: skill.name, type: 'DEBUFF_DOT', stat: 'HP', modType: 'DOT_PERCENT_CURRENT', amount: amount, turnsLeft: duration }); outcome.statusApplied = `ติดสถานะต่อเนื่อง (${duration} เทิร์น)`; break;
-                case 'SUMMON': outcome.statusApplied = `อัญเชิญ ${skill.effect.unitId || 'อสูร'} สำเร็จ!`; break;
+                case 'SUMMON': 
+                    outcome.statusApplied = `อัญเชิญ ${skill.effect.unitId || 'อสูร'} สำเร็จ!`; 
+                    // [FIX] เรียก spawnSummon โดยส่ง roomId ที่ประกาศไว้
+                    spawnSummon(skill.effect.unitId, casterData, roomId);
+                    break;
             }
         }
 
@@ -639,7 +703,6 @@ async function applyEffect(casterRef, targetRef, casterData, targetData, skill, 
             const finalConAfter = calculateTotalStat(currentData, 'CON'); 
             const newMaxHp = calculateHP(currentData.race, currentData.classMain, finalConAfter); 
             currentData.maxHp = newMaxHp;
-            // ปรับ HP ตาม Ratio เดิม
             currentData.hp = Math.floor(newMaxHp * hpRatio);
         }
         
@@ -1009,17 +1072,36 @@ async function performDamageRoll() {
 
     // เลือก Stat ที่ใช้คำนวณ (STR หรือ DEX)
     let damageStat = 'STR';
-    if (mainWeapon && ( 
+    const magicClasses = ['นักเวท', 'จอมเวท', 'มหาจอมเวท', 'Mage Master', 'นักบวช', 'นักปราชญ์', 'มหาปราชญ์', 'สตรีศักดิ์สิทธิ์'];
+    const magicWeapons = ['คทา', 'ไม้เท้า', 'หนังสือเวท'];
+    
+    if (magicClasses.includes(playerData.classMain) || (mainWeapon && magicWeapons.includes(mainWeapon.weaponType))) {
+        // ใช้ค่าที่มากกว่าระหว่าง INT หรือ WIS
+        const intVal = calculateTotalStat(playerData, 'INT');
+        const wisVal = calculateTotalStat(playerData, 'WIS');
+        damageStat = intVal > wisVal ? 'INT' : 'WIS';
+    }
+    else if (mainWeapon && ( 
         (mainWeapon.weaponType === 'มีด' && (playerData.classMain === 'โจร' || playerData.classMain === 'นักฆ่า')) || 
         (mainWeapon.weaponType === 'ธนู' && (playerData.classMain === 'เรนเจอร์' || playerData.classMain === 'อาเชอร์')) ||
         (mainWeapon.weaponType === 'หน้าไม้')
     )) damageStat = 'DEX';
-    
+
     let damageBonus = getStatBonus(calculateTotalStat(playerData, damageStat));
     
-    // ความเสียหายพื้นฐาน
     let totalDamage = Math.max(1, damageRoll + damageBonus);
     let damageExplanation = `ทอย (${diceTypeString}): ${damageRoll} + ${damageStat} Bonus: ${damageBonus}`;
+
+    const elementBuff = playerData.activeEffects?.find(e => e.type === 'WEAPON_BUFF_ELEMENTAL' || e.type === 'ELEMENTAL_BUFF');
+    let attackElement = 'PHYSICAL';
+
+    if (elementBuff) {
+        attackElement = elementBuff.amount || 'MAGIC'; // เช่น 'FIRE'
+        // (Optional) เพิ่มดาเมจธาตุ? หรือแค่เปลี่ยนประเภท
+        damageExplanation += ` [ธาตุ: ${attackElement}]`;
+    } else if (mainWeapon && mainWeapon.element) { // กรณีอาวุธมีธาตุในตัว
+        attackElement = mainWeapon.element;
+    }
     
     // --- ตรวจสอบ Passive พิเศษ (Override Formula) ---
     const formulaOverrideEffect = (playerData.activeEffects || []).find(e => e.stat === 'WeaponAttack' && e.modType === 'FORMULA' && e.buffId);
@@ -1084,6 +1166,22 @@ async function performDamageRoll() {
         totalDamage = Math.max(1, totalDamage);
     }
 
+    if (attackElement !== 'PHYSICAL') {
+        const reactionResult = checkElementalReaction(targetData, attackElement);
+        if (reactionResult) {
+            totalDamage = Math.floor(totalDamage * reactionResult.multiplier);
+            damageExplanation += ` <br>🔥 <strong>${reactionResult.name}!</strong> (x${reactionResult.multiplier})`;
+            // ส่ง Effect เพิ่มเติมถ้ามี (เช่น แช่แข็ง)
+            if (reactionResult.status) {
+                // ต้องส่งคำสั่งติดสถานะเพิ่ม (ซับซ้อนหน่อย แต่ทำได้โดยการเรียก applyEffect แบบเงียบๆ หรือฝากไปกับ pendingAttack)
+                showAlert(`เกิดปฏิกิริยา: ${reactionResult.name}!`, 'success');
+            }
+        }
+        
+        // แปะสถานะธาตุใส่ศัตรู (ถ้ายังไม่ติด)
+        applyElementalStatusToTarget(roomId, selectedTargetKey, combatState.type, attackElement);
+    }
+
     // แสดงการ์ดผลลัพธ์
     const resultCard = document.getElementById('rollResultCard'); 
     resultCard.innerHTML = `<h4>ผลความเสียหาย: ${targetData.name}</h4><p>${damageExplanation} = <strong>${totalDamage}</strong></p><p class="outcome">🔥 สร้างความเสียหาย ${totalDamage} หน่วย! 🔥</p>`; 
@@ -1124,5 +1222,135 @@ async function performDamageRoll() {
             await endPlayerTurn(uid, roomId);
             resultCard.classList.add('hidden');
         }, 2500); 
+    }
+}
+
+function checkElementalReaction(targetData, incomingElement) {
+    if (!targetData.activeEffects) return null;
+    
+    // หาธาตุที่ติดอยู่กับเป้าหมาย
+    const existingElementEffect = targetData.activeEffects.find(e => e.type === 'ELEMENTAL_STATUS');
+    if (!existingElementEffect) return null;
+
+    const currentElement = existingElementEffect.amount; // เช่น 'FIRE'
+    
+    // ดึงตาราง Reaction จาก skills-data.js (ต้องแน่ใจว่าโหลดไฟล์นั้นแล้ว)
+    if (typeof ELEMENT_REACTIONS === 'undefined') return null;
+
+    // เช็ค Reaction
+    const reaction = ELEMENT_REACTIONS[currentElement]?.[incomingElement] || ELEMENT_REACTIONS[incomingElement]?.[currentElement];
+    
+    if (reaction) {
+        return {
+            name: reaction.effect,
+            multiplier: reaction.multiplier || 1.0,
+            status: reaction.status
+        };
+    }
+    return null;
+}
+
+async function applyElementalStatusToTarget(roomId, targetKey, combatType, element) {
+    let targetRef;
+    if (combatType === 'PVP') targetRef = db.ref(`rooms/${roomId}/playersByUid/${targetKey}`);
+    else targetRef = db.ref(`rooms/${roomId}/enemies/${targetKey}`);
+
+    await targetRef.transaction(data => {
+        if (!data) return;
+        if (!data.activeEffects) data.activeEffects = [];
+        
+        // ถ้าเกิด Reaction ไปแล้ว (ใน checkElementalReaction) อาจจะลบธาตุเก่าออก
+        // แต่ในที่นี้เราจะแปะธาตุใหม่เข้าไป หรือ ทับธาตุเดิม
+        // (Logic อย่างง่าย: ธาตุใหม่ทับธาตุเก่าเสมอ)
+        
+        // ลบสถานะธาตุเก่าออก
+        data.activeEffects = data.activeEffects.filter(e => e.type !== 'ELEMENTAL_STATUS');
+        
+        // ใส่ธาตุใหม่ (อยู่ 3 เทิร์น)
+        data.activeEffects.push({
+            name: `ติดธาตุ: ${element}`,
+            type: 'ELEMENTAL_STATUS',
+            amount: element,
+            turnsLeft: 3
+        });
+        
+        return data;
+    });
+}
+
+async function spawnSummon(unitId, casterData, roomId) {
+    if (!roomId) roomId = sessionStorage.getItem('roomId');
+
+    // 1. ดึงสเตตัสของผู้อัญเชิญ
+    const casterLevel = casterData.level || 1;
+    const casterStr = calculateTotalStat(casterData, 'STR');
+    const casterDex = calculateTotalStat(casterData, 'DEX');
+    const casterCon = calculateTotalStat(casterData, 'CON');
+    const casterInt = calculateTotalStat(casterData, 'INT');
+    
+    // 2. กำหนด % การสืบทอดสเตตัส (เช่น 60%)
+    const scalingFactor = 0.60;
+    const levelBonus = casterLevel * 2; // เลเวลละ 2 แต้ม
+
+    // 3. ฐานสเตตัสของซัมมอน
+    const summonBaseStats = {
+        'mercenary': { name: 'ทหารรับจ้าง', baseHp: 30, bonusType: 'STR' },
+        'royal_guard': { name: 'อัศวินองครักษ์', baseHp: 50, bonusType: 'CON' },
+        'abyss_servant': { name: 'อสูรรับใช้แห่งขุมนรก', baseHp: 40, bonusType: 'INT' }
+    };
+
+    const template = summonBaseStats[unitId] || { name: 'Summon', baseHp: 20, bonusType: 'STR' };
+    const summonName = `${template.name} (${casterData.name})`;
+
+    // 4. คำนวณสเตตัสจริง
+    const newStr = Math.floor(10 + levelBonus + (casterStr * scalingFactor));
+    const newDex = Math.floor(10 + levelBonus + (casterDex * scalingFactor));
+    const newCon = Math.floor(10 + levelBonus + (casterCon * scalingFactor));
+    const newInt = Math.floor(10 + levelBonus + (casterInt * scalingFactor));
+    
+    // HP = Base + (Con * 2) + (Level * 5)
+    const newMaxHp = template.baseHp + (newCon * 2) + (casterLevel * 5);
+
+    const summonData = {
+        name: summonName,
+        hp: newMaxHp, 
+        maxHp: newMaxHp, 
+        damageDice: 'd8',
+        stats: { STR: newStr, DEX: newDex, CON: newCon, INT: newInt, WIS: 10, CHA: 10 },
+        type: 'player_summon',
+        ownerUid: casterData.uid, 
+        activeEffects: []
+    };
+
+    const newRef = await db.ref(`rooms/${roomId}/enemies`).push(summonData);
+    const newSummonId = newRef.key;
+
+    // แทรกคิวต่อสู้ (ถ้ามี)
+    const combatRef = db.ref(`rooms/${roomId}/combat`);
+    const combatSnap = await combatRef.get();
+    
+    if (combatSnap.exists()) {
+        const combatState = combatSnap.val();
+        if (combatState.isActive) {
+            let turnOrder = combatState.turnOrder;
+            if (!Array.isArray(turnOrder)) turnOrder = [];
+            
+            const newUnit = {
+                id: newSummonId,
+                name: summonName,
+                dex: newDex,
+                type: 'enemy', 
+                isSummon: true 
+            };
+
+            turnOrder.push(newUnit);
+            // เรียงลำดับเทิร์นใหม่ตาม DEX
+            turnOrder.sort((a, b) => b.dex - a.dex);
+            
+            await combatRef.child('turnOrder').set(turnOrder);
+            showAlert(`อัญเชิญ ${summonName} (HP:${newMaxHp}) สำเร็จ!`, 'success');
+        }
+    } else {
+        showAlert(`อัญเชิญ ${summonName} แล้ว!`, 'success');
     }
 }

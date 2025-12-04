@@ -142,6 +142,11 @@
       <p> <strong>เลเวลปัจจุบัน:</strong> <span id="editLevel">1</span> | <strong>แต้มอิสระ:</strong> <span id="editFreeStatPoints">0</span> </p>
       <button onclick="changeLevel(1)">⬆️ เพิ่ม 1 เลเวล</button>
       <button onclick="changeLevel(-1)" style="background-color: #dc3545;">⬇️ ลด 1 เลเวล</button>
+      <div style="display:flex; gap:5px; align-items:center; margin-top:5px;">
+          <input type="number" id="levelChangeInput" value="1" style="width:60px;" placeholder="จำนวน">
+          <button onclick="changeLevel(parseInt(document.getElementById('levelChangeInput').value))" style="background:#28a745; width:auto;">⬆️ เพิ่ม</button>
+          <button onclick="changeLevel(-parseInt(document.getElementById('levelChangeInput').value))" style="background:#dc3545; width:auto;">⬇️ ลด</button>
+      </div>
       <h4>🌀 บัฟ/ดีบัฟชั่วคราว (Temp Level)</h4>
       <label for="tempLevelInput">เลเวลชั่วคราว:</label> <input type="number" id="tempLevelInput" value="0">
       <button onclick="applyTempLevel()" style="background-color: #007bff;">✨ ใช้บัฟ/ดีบัฟ</button>

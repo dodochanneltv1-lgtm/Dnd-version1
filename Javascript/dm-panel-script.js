@@ -5,6 +5,7 @@ let combatState = {};
 let previousPlayerHps = {};
 let previousEnemyHps = {};
 let currentShopListener = null;
+let lastProcessedTurnIndex = -1;
 
 // Consts
 const ALL_CLASSES = (typeof CLASS_DATA !== 'undefined') ? Object.keys(CLASS_DATA) : [];
@@ -520,7 +521,8 @@ async function advanceTurn() {
             return unitData; 
         });
     }
-    
+
+    lastProcessedTurnIndex = -1;
     await combatRef.child('currentTurnIndex').set(nextIndex);
     await combatRef.child('lastUpdated').set(Date.now());
 
@@ -538,20 +540,32 @@ async function endCombat() {
         const updates = {};
         updates[`rooms/${roomId}/combat`] = null;
         
+        // [FIX] วนลูปจัดการศัตรู/ซัมมอน
         Object.keys(allEnemies).forEach(key => {
-            updates[`rooms/${roomId}/enemies/${key}/activeEffects`] = [];
-            updates[`rooms/${roomId}/enemies/${key}/skillCooldowns`] = {};
+            const enemy = allEnemies[key];
+            
+            // เงื่อนไข: ถ้าเป็น "ซัมมอนฝ่ายผู้เล่น" ให้ลบทิ้งออกจาก Database เลย
+            if (enemy.type === 'player_summon') {
+                updates[`rooms/${roomId}/enemies/${key}`] = null;
+            } 
+            else {
+                // ถ้าเป็น "มอนสเตอร์ปกติ" ให้แค่รีเซ็ตบัฟ/คูลดาวน์ (เก็บตัวไว้)
+                updates[`rooms/${roomId}/enemies/${key}/activeEffects`] = [];
+                updates[`rooms/${roomId}/enemies/${key}/skillCooldowns`] = {};
+            }
         });
 
+        // รีเซ็ตผู้เล่น (เหมือนเดิม)
         Object.keys(allPlayersDataByUID).forEach(uid => {
             updates[`rooms/${roomId}/playersByUid/${uid}/activeEffects`] = [];
             updates[`rooms/${roomId}/playersByUid/${uid}/skillCooldowns`] = {};
         });
 
+        lastProcessedTurnIndex = -1;
         await db.ref().update(updates);
 
         hideLoading();
-        showCustomAlert('การต่อสู้จบลงแล้ว', 'info');
+        showCustomAlert('การต่อสู้จบลงแล้ว (ซัมมอนกลับบ้านเก่าเรียบร้อย)', 'info');
         
     } catch (error) {
         hideLoading();
@@ -560,61 +574,149 @@ async function endCombat() {
     }
 }
 
-async function dmPerformEnemyAttack() {
+async function executeAttack(attackerId, targetId, isAuto = false) {
     const roomId = sessionStorage.getItem('roomId');
     const display = document.getElementById('dm-roll-result-display');
-    const attackButton = document.getElementById('enemy-attack-button');
-    attackButton.disabled = true;
-    display.innerHTML = 'กำลังทอยเต๋าโจมตี...';
+    
+    // 1. ดึงข้อมูล
+    const attackerData = allEnemies[attackerId];
+    let targetData = allPlayersDataByUID[targetId];
+    let targetType = 'player';
 
-    const attackerUnit = combatState.turnOrder[combatState.currentTurnIndex];
-    const attackerData = allEnemies[attackerUnit.id];
-    const targetPlayerUid = document.getElementById('enemy-attack-target-select').value;
-    const targetPlayerData = allPlayersDataByUID[targetPlayerUid];
+    if (!targetData && allEnemies[targetId]) {
+        targetData = allEnemies[targetId];
+        targetType = 'summon'; 
+    }
 
-    if (!attackerData || !targetPlayerData) {
-        showCustomAlert('ไม่พบข้อมูลผู้โจมตีหรือเป้าหมาย!', 'error');
-        attackButton.disabled = false;
+    if (!attackerData || !targetData) {
+        if (!isAuto) showCustomAlert('ไม่พบข้อมูลเป้าหมาย!', 'error');
         return;
     }
 
-    let rollResult = 0;
-    if (typeof showDiceRollAnimation === 'function') {
-        const { total } = await showDiceRollAnimation(1, 20, 'dm-dice-animation-area', 'dmDiceResult', null);
-        rollResult = total;
-    } else {
-        rollResult = Math.floor(Math.random() * 20) + 1;
-    }
+    if (!isAuto && display) display.innerHTML = 'กำลังคำนวณการโจมตี...';
 
-    const strBonus = Math.floor(((attackerData.stats.STR || 10) - 10) / 2);
+    // 2. คำนวณค่าพลังโจมตี (Attack Roll)
+    const strStat = (attackerData.stats && attackerData.stats.STR) ? attackerData.stats.STR : 10;
+    const strBonus = Math.floor((strStat - 10) / 2);
+    
+    let rollResult = 0;
+    if (isAuto) {
+        rollResult = Math.floor(Math.random() * 20) + 1;
+    } else {
+        const animObj = await showDiceRollAnimation(1, 20, 'dm-dice-animation-area', 'dmDiceResult', null);
+        rollResult = animObj.total;
+    }
     const totalAttack = rollResult + strBonus;
 
-    const playerDEX = calculateTotalStat(targetPlayerData, 'DEX');
-    const playerAC = 10 + Math.floor((playerDEX - 10) / 2);
+    // 3. คำนวณ AC และค่าโบนัสเป้าหมาย
+    let targetDex = 10;
+    let targetCon = 10;
     
+    if (targetType === 'player') {
+        targetDex = calculateTotalStat(targetData, 'DEX');
+        targetCon = calculateTotalStat(targetData, 'CON');
+    } else {
+        targetDex = (targetData.stats?.DEX || 10);
+        targetCon = (targetData.stats?.CON || 10);
+    }
+    
+    const targetAC = 10 + Math.floor((targetDex - 10) / 2);
+
+    // 4. คำนวณดาเมจตั้งต้น
     const damageDice = attackerData.damageDice || 'd6';
-    const initialDamage = calculateDamage(damageDice, strBonus);
+    const diceSize = parseInt(damageDice.replace('d', '')) || 6;
+    const dmgRoll = Math.floor(Math.random() * diceSize) + 1;
+    const initialDamage = Math.max(1, dmgRoll + strBonus);
 
-    const pendingAttack = {
-        attackerKey: attackerUnit.id,
-        attackerName: attackerData.name,
-        attackRollValue: totalAttack,
-        targetAC: playerAC,
-        initialDamage: initialDamage 
-    };
+    // 5. [NEW LOGIC] ระบบคำนวณผลลัพธ์อัตโนมัติ (Auto-Resolve)
+    let logMsg = '';
+    let finalDamage = 0;
+    let isHit = false;
+    let reactionText = "";
 
-    if (totalAttack < playerAC) {
-        display.innerHTML = `<p style="color: #ff4d4d;"><strong>${attackerData.name}</strong> โจมตี <strong>${targetPlayerData.name}</strong> พลาด!</p><p>ค่าโจมตี: ${totalAttack} (ทอย ${rollResult} + โบนัส ${strBonus}) vs AC ผู้เล่น: ${playerAC}</p>`;
-        attackButton.disabled = false;
-        setTimeout(async () => {
-             await db.ref(`rooms/${roomId}/combat/actionComplete`).set(attackerUnit.id);
-        }, 1500);
-        return;
+    if (totalAttack >= targetAC) {
+        // --- โจมตีเข้าเป้า (ทางเทคนิค) ---
+        
+        if (targetType === 'player') {
+            // [PLAYER AUTO DEFENSE]
+            // สุ่มโอกาสหลบอัตโนมัติ: ทอย d20 + DEX Bonus ผู้เล่น
+            const dexBonus = Math.floor((targetDex - 10) / 2);
+            const playerDodgeRoll = Math.floor(Math.random() * 20) + 1 + dexBonus;
+
+            if (playerDodgeRoll > totalAttack) {
+                // หลบพ้นเฉยเลย! (Lucky Dodge)
+                isHit = false;
+                reactionText = `(หลบพ้น! ทอย ${playerDodgeRoll})`;
+            } else {
+                // หลบไม่พ้น -> รับดาเมจ (หักลบด้วย CON นิดหน่อย)
+                isHit = true;
+                const conBonus = Math.floor((targetCon - 10) / 2);
+                const damageReduction = Math.max(0, Math.ceil(conBonus / 2)); // ลดดาเมจตามความถึก
+                finalDamage = Math.max(0, initialDamage - damageReduction);
+                
+                if (damageReduction > 0) reactionText = `(ถึกทน! ลด ${damageReduction})`;
+                else reactionText = `(โดนเต็มๆ)`;
+            }
+        } else {
+            // [MOB/SUMMON] รับดาเมจเต็มๆ
+            isHit = true;
+            finalDamage = initialDamage;
+        }
+
+        // --- ประมวลผลดาเมจ ---
+        if (isHit) {
+            const newHp = Math.max(0, targetData.hp - finalDamage);
+            
+            // อัปเดต HP ลง Database
+            let dbPath = targetType === 'player' ? `playersByUid/${targetId}` : `enemies/${targetId}`;
+            await db.ref(`rooms/${roomId}/${dbPath}/hp`).set(newHp);
+            
+            // สร้างข้อความ Log
+            // ถ้าเป้าหมายเป็นฝ่ายผู้เล่น (คน หรือ ซัมมอน) ให้ใช้สีแดงเตือน
+            const color = (targetType === 'player' || targetData.type === 'player_summon') ? '#ff4d4d' : '#00ff00';
+            logMsg = `<span style="color:${color};">⚔️ ${attackerData.name} โจมตี ${targetData.name} เข้า ${finalDamage}! ${reactionText}</span>`;
+        } else {
+            // หลบได้
+            logMsg = `<span style="color:#28a745;">💨 ${attackerData.name} โจมตี ${targetData.name} พลาด! ${reactionText}</span>`;
+        }
+
+    } else {
+        // --- โจมตีวืดตั้งแต่แรก (Attack Roll < AC) ---
+        logMsg = `<span style="color:#aaa;">💨 ${attackerData.name} โจมตี ${targetData.name} ไม่โดน! (AC ${targetAC})</span>`;
     }
 
-    await db.ref(`rooms/${roomId}/playersByUid/${targetPlayerUid}/pendingAttack`).set(pendingAttack);
+    // 6. แสดงผลและบันทึก Log
+    if(display) display.innerHTML = logMsg;
+    
+    // ส่ง Log ให้ผู้เล่นเห็น (จะเด้งเป็น Toast แจ้งเตือนมุมจอ)
+    await db.ref(`rooms/${roomId}/combatLogs`).push({ 
+        message: logMsg.replace(/<[^>]*>?/gm, ''), // ลบ HTML tag ออกจากข้อความ Log
+        timestamp: Date.now() 
+    });
 
-    display.innerHTML = `<p><strong>${attackerData.name}</strong> โจมตี <strong>${targetPlayerData.name}</strong>!</p><p>ค่าโจมตี: ${totalAttack} (ทอย ${rollResult} + โบนัส ${strBonus}) vs AC ผู้เล่น: ${playerAC}</p><p style="color: #ffc107;">...กำลังรอการตอบสนองจากผู้เล่น (15 วินาที)...</p>`;
+    // 7. [FIX] จบเทิร์นทันที ไม่มีการรอ Pending อีกต่อไป
+    if (!isAuto) {
+        // ถ้า DM กดมือ ให้จบ Action
+        setTimeout(() => db.ref(`rooms/${roomId}/combat/actionComplete`).set(attackerId), 1500);
+    } else {
+        // ถ้าเป็นบอท ให้เปลี่ยนเทิร์นเลย
+        setTimeout(() => advanceTurn(), 1500);
+    }
+    
+    const attackButton = document.getElementById('enemy-attack-button');
+    if(attackButton) attackButton.disabled = false;
+}
+
+async function dmPerformEnemyAttack() {
+    const attackButton = document.getElementById('enemy-attack-button');
+    if(attackButton) attackButton.disabled = true;
+
+    // ดึง ID จาก State ปัจจุบัน
+    const attackerUnit = combatState.turnOrder[combatState.currentTurnIndex];
+    const targetId = document.getElementById('enemy-attack-target-select').value;
+
+    // เรียกฟังก์ชันกลาง (isAuto = false)
+    await executeAttack(attackerUnit.id, targetId, false);
 }
 
 async function handleDefenseResolution(resolution) {
@@ -670,6 +772,7 @@ function displayCombatState(state) {
     const enemyTurnView = document.getElementById('enemy-turn-view');
     const currentTurnUnitName = document.getElementById('current-turn-unit-name');
     const enemyAttackTargetSelect = document.getElementById('enemy-attack-target-select');
+    const enemyAttackButton = document.getElementById('enemy-attack-button');
 
     if (!state || !state.isActive) {
         inactiveView.classList.remove('hidden');
@@ -686,49 +789,79 @@ function displayCombatState(state) {
     state.turnOrder.forEach((unit, index) => {
         const li = document.createElement('li');
         li.textContent = `${unit.name} (DEX: ${unit.dex})`;
-        if (index === state.currentTurnIndex) {
-            li.className = 'current-turn';
-        }
+        if (index === state.currentTurnIndex) li.className = 'current-turn';
         turnOrderList.appendChild(li);
     });
 
     const currentUnit = state.turnOrder[state.currentTurnIndex];
-    currentTurnUnitName.textContent = `เทิร์นของ: ${currentUnit.name}`;
+    
+    // ตรวจสอบชนิด
+    const isSummon = currentUnit.isSummon === true || (currentUnit.type === 'enemy' && allEnemies[currentUnit.id]?.type === 'player_summon');
+    const isNormalEnemy = currentUnit.type === 'enemy' && !isSummon;
+    
+    // ตรวจสอบโหมด Auto ของศัตรู
+    const enemyData = allEnemies[currentUnit.id];
+    const isAutoMode = enemyData?.isAuto === true;
 
     if (currentUnit.type === 'player') {
+        currentTurnUnitName.textContent = `เทิร์นของ: ${currentUnit.name}`;
         playerTurnView.classList.remove('hidden');
         enemyTurnView.classList.add('hidden');
-    } else { 
+    } else {
         playerTurnView.classList.add('hidden');
         enemyTurnView.classList.remove('hidden');
 
-        const currentEnemyData = allEnemies[currentUnit.id];
-        const tauntEffect = Array.isArray(currentEnemyData?.activeEffects)
-            ? currentEnemyData.activeEffects.find(effect => effect.type === 'TAUNT')
-            : null;
-
-        if (tauntEffect && allPlayersDataByUID[tauntEffect.taunterUid]?.hp > 0) {
-            const taunter = allPlayersDataByUID[tauntEffect.taunterUid];
-            currentTurnUnitName.textContent = `เทิร์นของ: ${currentUnit.name} (ถูกยั่วยุโดย ${taunter.name}!)`;
-            enemyAttackTargetSelect.innerHTML = `<option value="${tauntEffect.taunterUid}">${taunter.name} (HP: ${taunter.hp})</option>`;
-            enemyAttackTargetSelect.disabled = true;
-
+        // --- ส่วนแสดงชื่อและปุ่ม Auto ---
+        let autoBtnHtml = '';
+        if (isNormalEnemy) {
+            const btnColor = isAutoMode ? '#28a745' : '#6c757d';
+            const btnText = isAutoMode ? '🤖 Auto: ON' : '👤 Manual';
+            autoBtnHtml = `<button onclick="toggleEnemyAuto('${currentUnit.id}')" style="margin-left:10px; width:auto; padding:2px 8px; font-size:0.7em; background-color:${btnColor};">${btnText}</button>`;
+        }
+        
+        if (isSummon) {
+            currentTurnUnitName.innerHTML = `เทิร์นของ: <span style="color:#00e676;">${currentUnit.name} (ฝ่ายผู้เล่น)</span>`;
         } else {
+            currentTurnUnitName.innerHTML = `เทิร์นของ: <span style="color:#ff4d4d;">${currentUnit.name}</span> ${autoBtnHtml}`;
+        }
+
+        // --- Logic การทำงาน ---
+        if (isSummon || (isNormalEnemy && isAutoMode)) {
+            // โหมด AI (ซัมมอน หรือ ศัตรูเปิดบอท)
+            enemyAttackTargetSelect.innerHTML = '<option>🤖 กำลังทำงานอัตโนมัติ...</option>';
+            enemyAttackTargetSelect.disabled = true;
+            enemyAttackButton.disabled = true; 
+            
+            // เรียก AI รวม (ใช้ได้ทั้งซัมมอนและศัตรู)
+            if (typeof processAutoTurn === 'function') processAutoTurn(currentUnit, state);
+            
+        } else {
+            // โหมด Manual (DM คุมเอง)
+            enemyAttackButton.disabled = false;
             enemyAttackTargetSelect.disabled = false;
             enemyAttackTargetSelect.innerHTML = '';
+            
+            // ใส่รายชื่อเป้าหมาย (ผู้เล่น + ซัมมอน)
             for (const uid in allPlayersDataByUID) {
                 if ((allPlayersDataByUID[uid].hp || 0) > 0) {
-                    enemyAttackTargetSelect.innerHTML += `<option value="${uid}">${allPlayersDataByUID[uid].name} (HP: ${allPlayersDataByUID[uid].hp})</option>`;
+                    enemyAttackTargetSelect.innerHTML += `<option value="${uid}">${allPlayersDataByUID[uid].name} (ผู้เล่น)</option>`;
                 }
             }
-            if (currentEnemyData && currentEnemyData.targetUid && allPlayersDataByUID[currentEnemyData.targetUid]) {
-                enemyAttackTargetSelect.value = currentEnemyData.targetUid;
-            } else if (enemyAttackTargetSelect.options.length > 0) {
-                enemyAttackTargetSelect.selectedIndex = 0;
+            for (const key in allEnemies) {
+                const en = allEnemies[key];
+                if (en.type === 'player_summon' && (en.hp || 0) > 0) {
+                    enemyAttackTargetSelect.innerHTML += `<option value="${key}">[ซัมมอน] ${en.name}</option>`;
+                }
+            }
+            
+            // เช็ค Taunt
+            const tauntEffect = enemyData?.activeEffects?.find(e => e.type === 'TAUNT');
+            if (tauntEffect) {
+               enemyAttackTargetSelect.value = tauntEffect.taunterUid;
+               enemyAttackTargetSelect.disabled = true; 
             }
         }
     }
-    document.getElementById('enemy-attack-button').disabled = (currentUnit.type === 'player');
 }
 
 async function startCombat() {
@@ -781,6 +914,11 @@ async function startCombat() {
 
     db.ref(`rooms/${roomId}/combat`).set(initialCombatState)
         .then(() => showCustomAlert('เริ่มการต่อสู้!', 'success'));
+    
+    if (state.isActive) {
+        const currentUnit = state.turnOrder[state.currentTurnIndex];
+        checkAndRunSummonAI(currentUnit, state);
+    }
 }
 
 function forceAdvanceTurn() {
@@ -1691,6 +1829,7 @@ window.onload = function() {
     listenForDefenseResolution();
 
     const playersRef = db.ref(`rooms/${roomId}/playersByUid`);
+    
     playersRef.on('value', (snapshot) => {
         allPlayersDataByUID = snapshot.val() || {};
 
@@ -1904,4 +2043,80 @@ function populateRaceAndClassDropdowns() {
             guildClassSelect.innerHTML += `<option value="${className}">${className}</option>`;
         });
     }
+}
+
+function toggleEnemyAuto(enemyId) {
+    const roomId = sessionStorage.getItem('roomId');
+    const enemyRef = db.ref(`rooms/${roomId}/enemies/${enemyId}`);
+    
+    enemyRef.transaction(data => {
+        if (!data) return data;
+        data.isAuto = !data.isAuto; // สลับค่า true/false
+        return data;
+    });
+}
+
+// ฟังก์ชัน AI ประมวลผลเทิร์น (ใช้แทน checkAndRunSummonAI)
+async function processAutoTurn(currentUnit, combatState) {
+    const roomId = sessionStorage.getItem('roomId');
+
+    // ป้องกันการรันซ้ำในเทิร์นเดิม
+    if (combatState.currentTurnIndex === lastProcessedTurnIndex) return; 
+    lastProcessedTurnIndex = combatState.currentTurnIndex;
+    
+    const unitData = allEnemies[currentUnit.id];
+    if (!unitData) return;
+
+    const isPlayerSummon = unitData.type === 'player_summon';
+    const display = document.getElementById('dm-roll-result-display');
+    
+    if (display) {
+        const color = isPlayerSummon ? '#00e676' : '#ff4d4d';
+        display.innerHTML = `<span style="color:${color};">🤖 ${currentUnit.name} กำลังคิด...</span>`;
+    }
+
+    setTimeout(async () => {
+        // 1. ระบุทีมและหาเป้าหมาย
+        let validTargets = [];
+        const latestEnemiesSnap = await db.ref(`rooms/${roomId}/enemies`).get();
+        const latestEnemies = latestEnemiesSnap.val() || {};
+
+        if (isPlayerSummon) {
+            // ซัมมอน: ตีศัตรู
+            validTargets = Object.keys(latestEnemies).filter(k => 
+                k !== currentUnit.id && latestEnemies[k].type !== 'player_summon' && latestEnemies[k].hp > 0
+            ).map(id => ({ id, ...latestEnemies[id], targetType: 'enemy' }));
+        } else {
+            // ศัตรู: ตีผู้เล่น + ซัมมอน
+            for (const uid in allPlayersDataByUID) {
+                if ((allPlayersDataByUID[uid].hp || 0) > 0) {
+                    validTargets.push({ id: uid, ...allPlayersDataByUID[uid], targetType: 'player' });
+                }
+            }
+            for (const key in latestEnemies) {
+                if (latestEnemies[key].type === 'player_summon' && latestEnemies[key].hp > 0) {
+                    validTargets.push({ id: key, ...latestEnemies[key], targetType: 'summon' });
+                }
+            }
+            
+            // Chekc Taunt (ยั่วยุ)
+            const tauntEffect = unitData.activeEffects?.find(e => e.type === 'TAUNT');
+            if (tauntEffect && allPlayersDataByUID[tauntEffect.taunterUid]?.hp > 0) {
+                validTargets = [{ id: tauntEffect.taunterUid, ...allPlayersDataByUID[tauntEffect.taunterUid], targetType: 'player' }];
+            }
+        }
+
+        if (validTargets.length === 0) {
+            if(display) display.innerHTML = `<span>...ไม่พบเป้าหมาย ข้ามเทิร์น...</span>`;
+            setTimeout(() => advanceTurn(), 1000);
+            return;
+        }
+
+        const target = validTargets[Math.floor(Math.random() * validTargets.length)];
+
+        // 2. [FIX] เรียกใช้ฟังก์ชันกลาง (isAuto = true)
+        // ฟังก์ชันนี้จะจัดการเรื่อง Pending Attack และหยุดรอผู้เล่นให้เอง
+        await executeAttack(currentUnit.id, target.id, true);
+
+    }, 1000);
 }

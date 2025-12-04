@@ -18,12 +18,19 @@
         
         /* 1. ส่วนควบคุมแผนที่ (ด้านบน) */
         #main-controls {
-            flex-shrink: 0;
-            background: rgba(0, 0, 0, 0.8);
+            position: sticky; /* หรือ fixed ถ้าอยากให้ลอยตลอด */
+            top: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.9);
             border-bottom: 2px solid #ffae00;
-            padding: 10px;
+            padding: 10px 0; /* ลด padding แนวข้าง */
             text-align: center;
-            z-index: 10;
+            z-index: 1000; /* ดันให้สูงกว่าเลเยอร์อื่น */
+            box-sizing: border-box; /* ป้องกัน padding ดันความกว้างเกิน */
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap; /* ให้ปุ่มตกบรรทัดถ้าจอเล็ก */
         }
         
         #main-controls button {
