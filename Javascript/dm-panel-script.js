@@ -628,56 +628,89 @@ async function executeAttack(attackerId, targetId, isAuto = false) {
     const dmgRoll = Math.floor(Math.random() * diceSize) + 1;
     const initialDamage = Math.max(1, dmgRoll + strBonus);
 
-    // 5. [NEW LOGIC] ระบบคำนวณผลลัพธ์อัตโนมัติ (Auto-Resolve)
+    // 5. [AUTO RESOLVE LOGIC v2]
     let logMsg = '';
     let finalDamage = 0;
-    let isHit = false;
     let reactionText = "";
+    let actionChosen = 'none';
 
     if (totalAttack >= targetAC) {
-        // --- โจมตีเข้าเป้า (ทางเทคนิค) ---
+        // --- โจมตีเข้าเป้า (ในทางเทคนิค) ---
         
         if (targetType === 'player') {
             // [PLAYER AUTO DEFENSE]
-            // สุ่มโอกาสหลบอัตโนมัติ: ทอย d20 + DEX Bonus ผู้เล่น
-            const dexBonus = Math.floor((targetDex - 10) / 2);
-            const playerDodgeRoll = Math.floor(Math.random() * 20) + 1 + dexBonus;
+            // 1. เช็ค Cooldown
+            const cdDodge = targetData.skillCooldowns?.['action_dodge']?.turnsLeft || 0;
+            const cdBlock = targetData.skillCooldowns?.['action_block']?.turnsLeft || 0;
+            
+            // 2. เช็คอุปกรณ์ (มีอะไรให้กันไหม)
+            const hasShield = targetData.equippedItems?.offHand || targetData.equippedItems?.mainHand;
 
-            if (playerDodgeRoll > totalAttack) {
-                // หลบพ้นเฉยเลย! (Lucky Dodge)
-                isHit = false;
-                reactionText = `(หลบพ้น! ทอย ${playerDodgeRoll})`;
-            } else {
-                // หลบไม่พ้น -> รับดาเมจ (หักลบด้วย CON นิดหน่อย)
-                isHit = true;
-                const conBonus = Math.floor((targetCon - 10) / 2);
-                const damageReduction = Math.max(0, Math.ceil(conBonus / 2)); // ลดดาเมจตามความถึก
-                finalDamage = Math.max(0, initialDamage - damageReduction);
+            // 3. สร้างตัวเลือก (Pool)
+            let options = ['none']; // ทางเลือก "ไม่ทำอะไร" มีเสมอ (33% ถ้าครบ)
+            if (cdDodge === 0) options.push('dodge');
+            if (cdBlock === 0 && hasShield) options.push('block');
+
+            // 4. สุ่มเลือก Action (อัตราเท่ากันตามตัวเลือกที่มี)
+            actionChosen = options[Math.floor(Math.random() * options.length)];
+
+            // 5. ประมวลผล Action
+            if (actionChosen === 'dodge') {
+                // ทอยหลบ: d20 + DEX
+                const dexBonus = Math.floor((targetDex - 10) / 2);
+                const dodgeRoll = Math.floor(Math.random() * 20) + 1 + dexBonus;
                 
-                if (damageReduction > 0) reactionText = `(ถึกทน! ลด ${damageReduction})`;
-                else reactionText = `(โดนเต็มๆ)`;
+                // สั่งติด Cooldown 2 เทิร์น
+                await db.ref(`rooms/${roomId}/playersByUid/${targetId}/skillCooldowns/action_dodge`).set({ type: 'PERSONAL', turnsLeft: 2 });
+
+                if (dodgeRoll > totalAttack) {
+                    finalDamage = 0;
+                    reactionText = `<span style="color:#00e676;">(Auto-Dodge! ทอย ${dodgeRoll})</span>`;
+                } else {
+                    finalDamage = initialDamage;
+                    reactionText = `<span style="color:#ff4d4d;">(พยายามหลบ..แต่ล้ม! ทอย ${dodgeRoll})</span>`;
+                }
+
+            } else if (actionChosen === 'block') {
+                // ทอยกัน: d20 + CON
+                const conBonus = Math.floor((targetCon - 10) / 2);
+                const blockRoll = Math.floor(Math.random() * 20) + 1 + conBonus;
+                const reduction = Math.floor(blockRoll / 2);
+                
+                // สั่งติด Cooldown 2 เทิร์น
+                await db.ref(`rooms/${roomId}/playersByUid/${targetId}/skillCooldowns/action_block`).set({ type: 'PERSONAL', turnsLeft: 2 });
+
+                finalDamage = Math.max(0, initialDamage - reduction);
+                reactionText = `<span style="color:#17a2b8;">(Auto-Block! ลด ${reduction})</span>`;
+
+            } else {
+                // รับเต็มๆ
+                finalDamage = initialDamage;
+                reactionText = `(ยืนรับดาเมจ)`;
             }
+
         } else {
-            // [MOB/SUMMON] รับดาเมจเต็มๆ
-            isHit = true;
+            // [MOB/SUMMON] รับดาเมจเต็มๆ (ไม่มีสมองหลบ)
             finalDamage = initialDamage;
         }
 
-        // --- ประมวลผลดาเมจ ---
-        if (isHit) {
-            const newHp = Math.max(0, targetData.hp - finalDamage);
-            
-            // อัปเดต HP ลง Database
-            let dbPath = targetType === 'player' ? `playersByUid/${targetId}` : `enemies/${targetId}`;
+        // --- อัปเดต HP ---
+        const newHp = Math.max(0, targetData.hp - finalDamage);
+        let dbPath = targetType === 'player' ? `playersByUid/${targetId}` : `enemies/${targetId}`;
+        
+        // ถ้าดาเมจเข้าเนื้อจริงๆ ถึงค่อยอัปเดต HP
+        if (finalDamage > 0) {
             await db.ref(`rooms/${roomId}/${dbPath}/hp`).set(newHp);
-            
-            // สร้างข้อความ Log
-            // ถ้าเป้าหมายเป็นฝ่ายผู้เล่น (คน หรือ ซัมมอน) ให้ใช้สีแดงเตือน
-            const color = (targetType === 'player' || targetData.type === 'player_summon') ? '#ff4d4d' : '#00ff00';
-            logMsg = `<span style="color:${color};">⚔️ ${attackerData.name} โจมตี ${targetData.name} เข้า ${finalDamage}! ${reactionText}</span>`;
+        }
+        
+        // สร้าง Log
+        const color = (targetType === 'player' || targetData.type === 'player_summon') ? '#ff4d4d' : '#00ff00';
+        if (finalDamage === 0) {
+            // หลบพ้น
+            logMsg = `<span style="color:#28a745;">💨 ${attackerData.name} โจมตี ${targetData.name} ไม่เข้า! ${reactionText}</span>`;
         } else {
-            // หลบได้
-            logMsg = `<span style="color:#28a745;">💨 ${attackerData.name} โจมตี ${targetData.name} พลาด! ${reactionText}</span>`;
+            // โดนดาเมจ
+            logMsg = `<span style="color:${color};">⚔️ ${attackerData.name} โจมตี ${targetData.name} เข้า ${finalDamage}! ${reactionText}</span>`;
         }
 
     } else {
@@ -688,18 +721,16 @@ async function executeAttack(attackerId, targetId, isAuto = false) {
     // 6. แสดงผลและบันทึก Log
     if(display) display.innerHTML = logMsg;
     
-    // ส่ง Log ให้ผู้เล่นเห็น (จะเด้งเป็น Toast แจ้งเตือนมุมจอ)
+    // ส่ง Log (ลบ HTML Tag ออกเพื่อความสะอาดในประวัติ)
     await db.ref(`rooms/${roomId}/combatLogs`).push({ 
-        message: logMsg.replace(/<[^>]*>?/gm, ''), // ลบ HTML tag ออกจากข้อความ Log
+        message: logMsg.replace(/<[^>]*>?/gm, ''), 
         timestamp: Date.now() 
     });
 
-    // 7. [FIX] จบเทิร์นทันที ไม่มีการรอ Pending อีกต่อไป
+    // 7. จบเทิร์นทันที (Auto-Resolve เสร็จสิ้น)
     if (!isAuto) {
-        // ถ้า DM กดมือ ให้จบ Action
         setTimeout(() => db.ref(`rooms/${roomId}/combat/actionComplete`).set(attackerId), 1500);
     } else {
-        // ถ้าเป็นบอท ให้เปลี่ยนเทิร์นเลย
         setTimeout(() => advanceTurn(), 1500);
     }
     

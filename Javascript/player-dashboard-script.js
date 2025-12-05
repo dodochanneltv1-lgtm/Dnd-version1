@@ -6,6 +6,86 @@ let allEnemiesInRoom = {};
 let combatState = {};
 let currentCharacterData = null; 
 
+// let useVisualBars = localStorage.getItem('useVisualBars') === 'true';
+let visualMode = parseInt(localStorage.getItem('visualMode')) || 0;
+
+function toggleVisualMode() {
+    visualMode = (visualMode + 1) % 5; // วนลูป 0, 1, 2, 3, 4
+    localStorage.setItem('visualMode', visualMode);
+    
+    // อัปเดตข้อความปุ่ม (Optional: เพื่อให้รู้ว่าอยู่โหมดไหน)
+    // const btn = document.querySelector('.view-toggle-btn');
+    // if(btn) btn.textContent = `👁️ โหมด ${visualMode + 1}/5`;
+
+    // รีเฟรชหน้าจอทันที
+    if (currentCharacterData) {
+        displayCharacter(currentCharacterData, combatState);
+        displayInventory(currentCharacterData.inventory);
+        displayEquippedItems(currentCharacterData.equippedItems);
+        displayEnemies(allEnemiesInRoom, currentCharacterData.uid);
+        showTeammateInfo(); 
+    }
+}
+
+/* [NEW] ฟังก์ชัน Helper สร้าง HTML (หลอด หรือ ตัวเลข) */
+function getStatusDisplay(current, max, type = 'HP') {
+    const curVal = parseInt(current) || 0;
+    const maxVal = parseInt(max) || 1;
+    const percent = Math.min(100, Math.max(0, (curVal / maxVal) * 100));
+    
+    // 1. กำหนดสี
+    let color = '#fff'; // สีตัวอักษร
+    let barColor = '#ccc'; // สีหลอด
+
+    if (type === 'HP') {
+        if (percent > 50) { color = '#00ff00'; barColor = '#28a745'; } // เขียว
+        else if (percent > 25) { color = '#ffc107'; barColor = '#ffc107'; } // เหลือง
+        else { color = '#ff4d4d'; barColor = '#dc3545'; } // แดง
+    } else if (type === 'DURA') {
+        if (percent <= 0) { color = '#ff4d4d'; barColor = '#555'; } // พัง (เทา/แดง)
+        else if (percent > 50) { color = '#00ff00'; barColor = '#17a2b8'; } // ฟ้า/เขียว
+        else if (percent > 20) { color = '#ffc107'; barColor = '#ffc107'; } // เหลือง
+        else { color = '#ff4d4d'; barColor = '#dc3545'; } // แดง
+    }
+
+    // กรณีของพัง (แสดงข้อความพิเศษเสมอ หรือจะให้เป็นหลอดแดงเปล่าๆ ก็ได้)
+    // แต่เพื่อความชัดเจน ถ้าพังแล้วขอแสดง Text พิเศษในโหมด Text
+    if (type === 'DURA' && curVal <= 0) {
+        if (visualMode < 2) return `<span style="color:${color}; font-weight:bold;">[พัง 0%]</span>`;
+    }
+
+    // 2. สร้าง HTML ตามโหมด
+    switch (visualMode) {
+        case 0: // [194/194] (Text)
+            return `<span style="color:${color}; font-weight:bold;">${curVal} / ${maxVal}</span>`;
+            
+        case 1: // [100%] (Text)
+            return `<span style="color:${color}; font-weight:bold;">${Math.floor(percent)}%</span>`;
+            
+        case 2: // [Bar] 194/194
+            return createBarHtml(percent, barColor, `${curVal}/${maxVal}`);
+            
+        case 3: // [Bar] 100%
+            return createBarHtml(percent, barColor, `${Math.floor(percent)}%`);
+            
+        case 4: // [Bar] (Empty)
+            return createBarHtml(percent, barColor, ``); // ไม่ใส่ข้อความ
+            
+        default: return `${curVal}/${maxVal}`;
+    }
+}
+
+function createBarHtml(percent, color, text) {
+    return `
+        <div class="status-bar-container" style="width: 100px; display: inline-block; vertical-align: middle;">
+            <div class="status-bar-fill" style="width: ${percent}%; background-color: ${color}; height: 100%;"></div>
+            <div class="status-text-overlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 0.75em; color: #fff; text-shadow: 1px 1px 2px #000; font-weight: bold; white-space: nowrap; pointer-events: none;">
+                ${text}
+            </div>
+        </div>
+    `;
+}
+
 // --- Utility Functions ---
 const calcHPFn = typeof calculateHP === 'function' ? calculateHP : () => { console.error("calculateHP not found!"); return 10; };
 const getStatBonusFn = typeof getStatBonus === 'function' ? getStatBonus : () => { console.error("getStatBonus not found!"); return 0; };
@@ -89,6 +169,7 @@ const CHARACTER_INFO_HTML = `
     <h2>
         ข้อมูลตัวละคร
         <button onclick="toggleSectionVisibility('characterInfoPanel_body')" class="toggle-btn">ซ่อน</button>
+        <button onclick="toggleVisualMode()" class="view-toggle-btn">👁️ เปลี่ยนมุมมอง</button>
     </h2>
     <div id="characterInfoPanel_body">
         <p><strong>ชื่อ:</strong> <span id="name"></span> (<span id="level"></span>)</p>
@@ -107,7 +188,7 @@ const CHARACTER_INFO_HTML = `
             <p><strong>ภูมิหลัง:</strong> <span id="background"></span></p>
         </details>
         
-        <p><strong>พลังชีวิต:</strong> <span id="hp"></span></p>
+        <p><strong>พลังชีวิต:</strong> <span id="hpContainer"></span></p>
         <p><strong>GP:</strong> <span id="gp"></span></p>
         <div style="margin: 5px 0;"><small><strong>EXP:</strong>
         <span id="exp">0</span> / <span id="expToNextLevel">300</span></small>
@@ -150,6 +231,52 @@ function injectDashboardStyles() {
         @keyframes fadeInEffect { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
         .swal2-actions { display: flex; flex-wrap: wrap; justify-content: center; }
         .swal2-styled { margin: 5px !important; flex: 1 1 auto; }
+        .status-bar-container {
+            position: relative;
+            width: 100%;
+            height: 18px;
+            background-color: #333;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid #555;
+            box-shadow: inset 0 0 5px #000;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        .status-bar-fill {
+            height: 100%;
+            border-radius: 10px;
+            transition: width 0.4s ease-in-out;
+            box-shadow: inset 0 2px 0 rgba(255,255,255,0.3);
+        }
+        .status-text-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 0.75em;
+            color: #fff;
+            text-shadow: 1px 1px 2px #000;
+            font-weight: bold;
+            white-space: nowrap;
+            z-index: 2;
+        }
+        
+        /* ปุ่มสลับโหมด */
+        .view-toggle-btn {
+            background: linear-gradient(90deg, #6c757d, #495057);
+            color: white;
+            border: 1px solid #aaa;
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-size: 0.8em;
+            cursor: pointer;
+            float: right;
+            margin-left: 10px;
+        }
+        .view-toggle-btn:hover {
+            background: linear-gradient(90deg, #495057, #6c757d);
+        }
     `;
     document.head.appendChild(style);
 }
@@ -182,14 +309,13 @@ function updateCharacterStatsDisplay(charData) {
         }
     });
 
-    // [FIXED] คำนวณ MaxHP สดๆ จาก CON เสมอ เพื่อให้ตรงกับ Stat ที่เปลี่ยนไป
     const finalCon = calculateTotalStat(charData, 'CON');
     const displayMaxHp = calcHPFn(charData.race, charData.classMain, finalCon);
+    const currentHp = Math.min(charData.hp || 0, displayMaxHp);
     
-    const hpEl = document.getElementById('hp');
-    if (hpEl) {
-        const currentHp = Math.min(charData.hp || 0, displayMaxHp);
-        hpEl.textContent = `${currentHp} / ${displayMaxHp}`;
+    const hpContainer = document.getElementById('hpContainer'); // เปลี่ยนจาก hpEl เป็น hpContainer
+    if (hpContainer) {
+        hpContainer.innerHTML = getStatusDisplay(currentHp, displayMaxHp, 'HP');
     }
     
     const permanentLevel = charData.level || 1;
@@ -344,14 +470,11 @@ function displayInventory(inventory = []) {
         // Header
         let headerHtml = `<div style="display:flex; justify-content:space-between; align-items:center;">
             <span style="font-weight:bold; color:#ffeb8a; font-size:1em;">${item.name} <span style="color:#aaa; font-weight:normal;">(x${item.quantity})</span></span>`;
-        
+
         // Durability
         if (item.durability !== undefined) {
-             if (item.durability <= 0) headerHtml += `<span style="background:#dc3545; color:white; padding:1px 5px; border-radius:3px; font-size:0.7em;">พัง</span>`;
-             else {
-                 let color = item.durability > 30 ? '#28a745' : '#ffc107';
-                 headerHtml += `<span style="color:${color}; font-size:0.8em;">${item.durability}%</span>`;
-             }
+             const duraDisplay = getStatusDisplay(item.durability, 100, 'DURA');
+             headerHtml += `<span>${duraDisplay}</span>`;
         }
         headerHtml += `</div>`;
 
@@ -396,11 +519,8 @@ function displayEquippedItems(equipped = {}) {
         if (el) {
             let itemText = item?.name || '-';
             if (item && item.durability !== undefined) {
-                if (item.durability <= 0) itemText += ` <span style="color: #dc3545; font-weight: bold;">[พัง 0%]</span>`;
-                else {
-                    let color = item.durability > 30 ? '#00ff00' : (item.durability > 10 ? '#ffc107' : '#dc3545');
-                    itemText += ` <span style="color: ${color}; font-weight: bold;">[${item.durability}%]</span>`;
-                }
+                const duraDisplay = getStatusDisplay(item.durability, 100, 'DURA');
+                itemText += ` ${duraDisplay}`;
             }
             el.innerHTML = itemText;
         }
@@ -450,26 +570,29 @@ function showTeammateInfo() {
     let unit = allPlayersInRoom[id];
     let isSummon = false;
     
+    // [Logic] ถ้าหาในผู้เล่นไม่เจอ ลองหาในซัมมอน
     if (!unit && allEnemiesInRoom[id]) {
         unit = allEnemiesInRoom[id];
         isSummon = true;
     }
     
     if (unit) {
+        // [FIX] สร้าง HTML แสดง HP (รองรับโหมด Toggle)
+        const maxHp = unit.maxHp || 100;
+        const hpDisplay = getStatusDisplay(unit.hp, maxHp, 'HP');
+
         if (isSummon) {
-            const hp = unit.hp;
-            const maxHp = unit.maxHp || 100;
+            // --- กรณีซัมมอน ---
             const str = calculateTotalStat(unit, 'STR');
             const dex = calculateTotalStat(unit, 'DEX');
             const con = calculateTotalStat(unit, 'CON');
             const int = calculateTotalStat(unit, 'INT');
             
-            // แสดงข้อมูลซัมมอนแบบละเอียด
             infoDiv.innerHTML = `
                 <div style="border:1px solid #00e676; padding:10px; border-radius:8px; background:rgba(0,0,0,0.4);">
                     <h3 style="margin:0; color:#00e676;">${unit.name}</h3>
-                    <p style="font-size:0.9em; color:#ccc;">สถานะ: <strong>ซัมมอน</strong></p>
-                    <p style="margin:5px 0;"><strong>HP:</strong> <span style="color:${hp < maxHp*0.3 ? '#ff4d4d' : '#00ff00'};">${hp}</span> / ${maxHp}</p>
+                    <p style="font-size:0.9em; color:#ccc;">สถานะ: <strong>ซัมมอนฝ่ายผู้เล่น</strong></p>
+                    <p style="margin:5px 0;"><strong>HP:</strong> ${hpDisplay}</p>
                     
                     <hr style="border-color:#555; margin:5px 0;">
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; font-size:0.9em;">
@@ -484,9 +607,10 @@ function showTeammateInfo() {
                 </div>
             `;
         } else {
-            // (ส่วนแสดงข้อมูลผู้เล่น คงเดิม)
+            // --- กรณีผู้เล่น ---
             const finalCon = calculateTotalStat(unit, 'CON');
-            const maxHp = calcHPFn(unit.race, unit.classMain, finalCon);
+            // (จริงๆ ผู้เล่นจะมี maxHp ในตัวอยู่แล้ว แต่คำนวณซ้ำเพื่อความชัวร์ก็ได้ หรือใช้ unit.maxHp เลย)
+            
             let statsHtml = `<div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-top:5px; font-size: 0.9em;">`;
             ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'].forEach(stat => {
                 const val = calculateTotalStat(unit, stat);
@@ -494,14 +618,36 @@ function showTeammateInfo() {
             });
             statsHtml += `</div>`;
             
+            // แสดงอุปกรณ์ (แบบย่อ)
+            let equipHtml = `<ul style="margin-top:10px; padding-left:15px; font-size:0.85em; color:#ddd;">`;
+            const slots = { mainHand: '⚔️', offHand: '🛡️', head: '🧢', chest: '👕', legs: '👖', feet: '👢' };
+            let hasEquip = false;
+            
+            if (unit.equippedItems) {
+                for (const [key, icon] of Object.entries(slots)) {
+                    const item = unit.equippedItems[key];
+                    if (item) {
+                        hasEquip = true;
+                        // [FIX] แสดงความทนทานแบบ Toggle
+                        const duraDisplay = item.durability !== undefined ? getStatusDisplay(item.durability, 100, 'DURA') : '';
+                        equipHtml += `<li>${icon} ${item.name} <span style="font-size:0.8em">${duraDisplay}</span></li>`;
+                    }
+                }
+            }
+            if(!hasEquip) equipHtml += `<li><em>(ตัวเปล่า)</em></li>`;
+            equipHtml += `</ul>`;
+
             infoDiv.innerHTML = `
                 <div style="border:1px solid #444; padding:10px; border-radius:8px; background:rgba(0,0,0,0.4);">
                     <h3 style="margin:0 0 5px 0; color:#8be4ff;">${unit.name} <small>(Lv. ${unit.level})</small></h3>
-                    <p style="margin:2px 0;"><strong>HP:</strong> ${unit.hp} / ${maxHp}</p>
-                    <p style="margin:2px 0;"><strong>อาชีพ:</strong> ${unit.classMain}</p>
+                    <p style="margin:2px 0;"><strong>HP:</strong> ${hpDisplay}</p>
+                    <p style="margin:2px 0;"><strong>อาชีพ:</strong> ${unit.classMain} / ${unit.classSub || '-'}</p>
                     <hr style="border-color:#555; margin:5px 0;">
                     <strong>📊 สถานะปัจจุบัน:</strong>
                     ${statsHtml}
+                    <hr style="border-color:#555; margin:5px 0;">
+                    <strong>🛡️ อุปกรณ์ที่สวมใส่:</strong>
+                    ${equipHtml}
                 </div>
             `;
         }
@@ -566,8 +712,11 @@ function displayEnemies(enemies, currentUserUid) {
             const opponentData = allPlayersInRoom[opponentUnit.id];
             if (opponentData) {
                 const isDead = opponentData.hp <= 0;
-                const hpStyle = isDead ? 'color:red;' : 'color:#00ff00;';
-                const hpText = isDead ? '(พ่ายแพ้)' : `${opponentData.hp} / ${opponentData.maxHp || '?'}`;
+                
+                // [FIX] ใช้ Helper แสดง HP (รองรับโหมดหลอดเลือด)
+                const hpDisplay = isDead 
+                    ? '<span style="color:red; font-weight:bold;">(พ่ายแพ้)</span>' 
+                    : getStatusDisplay(opponentData.hp, opponentData.maxHp, 'HP');
                 
                 const str = calculateTotalStat(opponentData, 'STR');
                 const dex = calculateTotalStat(opponentData, 'DEX');
@@ -580,7 +729,7 @@ function displayEnemies(enemies, currentUserUid) {
                     <div style="border: 2px solid #ff4d4d; padding: 10px; border-radius: 5px; background: rgba(100,0,0,0.3);">
                         <h3 style="color: #ff4d4d; margin:0 0 5px 0;">VS คู่ประลอง</h3>
                         <div style="font-size: 1.2em; color: #fff; font-weight:bold;">${opponentData.name}</div>
-                        <div style="margin-bottom:5px;">HP: <span style="${hpStyle}">${hpText}</span></div>
+                        <div style="margin-bottom:5px;">HP: ${hpDisplay}</div>
                         <div style="margin-bottom:8px; display:flex; flex-wrap:wrap; gap:2px;">
                             ${badge('STR', str)} ${badge('DEX', dex)} ${badge('CON', con)}
                             ${badge('INT', int)} ${badge('WIS', wis)} ${badge('CHA', cha)}
@@ -611,17 +760,23 @@ function displayEnemies(enemies, currentUserUid) {
     let hasLiveEnemies = false;
 
     for (const key in enemies) {
-        // [FIXED] ดึงข้อมูลดิบมาก่อน เพื่อเช็ค type ที่แท้จริงจาก Database
+        // ดึงข้อมูลดิบมาก่อน เพื่อเช็ค type ที่แท้จริงจาก Database
         const rawData = enemies[key];
         
         // ถ้า type ใน Database บอกว่าเป็น 'player_summon' ให้ข้ามทันที
         if (rawData.type === 'player_summon') continue;
 
-        // ถ้าไม่ใช่ซัมมอน ค่อยสร้าง object ใหม่และใส่ default type เป็น enemy (กรณีข้อมูลเก่าไม่มี type)
+        // ถ้าไม่ใช่ซัมมอน ค่อยสร้าง object ใหม่และใส่ default type เป็น enemy
         const enemy = { ...rawData };
         if (!enemy.type) enemy.type = 'enemy';
 
         const isDead = enemy.hp <= 0;
+        
+        // [FIX] ใช้ Helper แสดง HP
+        const hpDisplay = isDead 
+            ? '<span style="color:red; text-decoration:line-through;">(ตาย)</span>' 
+            : getStatusDisplay(enemy.hp, enemy.maxHp, 'HP');
+
         const str = calculateTotalStat(enemy, 'STR');
         const dex = calculateTotalStat(enemy, 'DEX');
         const intVal = calculateTotalStat(enemy, 'INT');
@@ -633,9 +788,9 @@ function displayEnemies(enemies, currentUserUid) {
 
         container.innerHTML += `
             <div style="background:rgba(0,0,0,0.3); padding:8px; margin-bottom:5px; border-radius:4px; ${style}">
-                <div style="display:flex; justify-content:space-between;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
                     <strong style="color:#ffc107;">${enemy.name}</strong>
-                    <span style="color:${isDead?'red':'#fff'};">${isDead ? '(ตาย)' : `HP: ${enemy.hp}/${enemy.maxHp}`}</span>
+                    <span>HP: ${hpDisplay}</span>
                 </div>
                 ${!isDead ? `
                 <div style="margin-top:5px;">
