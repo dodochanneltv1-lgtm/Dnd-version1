@@ -78,9 +78,6 @@ async function registerUser() {
 
 // --------------------------------------------------------------------------------
 
-/**
- * ฟังก์ชันเข้าสู่ระบบ
- */
 async function loginUser() {
     const username = document.getElementById('username').value.trim();
     const password = document.getElementById('password').value;
@@ -93,6 +90,9 @@ async function loginUser() {
     showLoading('กำลังเข้าสู่ระบบ...');
     
     try {
+        // ⭐️ [เพิ่ม] สั่งให้ Firebase จำสถานะล็อกอินไว้ในเครื่องตลอดไป (แม้รีเฟรชหรือปิดแท็บ)
+        await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+
         const email = username + "@dnd.local";
         const userCredential = await firebase.auth().signInWithEmailAndPassword(email, password);
         const user = userCredential.user;
@@ -102,22 +102,19 @@ async function loginUser() {
             lastLogin: new Date().toISOString()
         });
 
-        // **[เพิ่ม]** แสดงข้อความสำเร็จแบบสั้นๆ ก่อนเปลี่ยนหน้า
-        // เพื่อให้ผู้ใช้เห็นว่าสำเร็จ แม้จะเปลี่ยนหน้าเร็ว
         hideLoading();
         await Swal.fire({
             title: 'เข้าสู่ระบบสำเร็จ!',
             icon: 'success',
-            timer: 1000, // ลดเวลาให้เร็วกว่าโค้ดเก่า
+            timer: 1000,
             showConfirmButton: false
         });
         
         window.location.href = 'lobby.html';
 
     } catch (error) {
-        hideLoading(); // ✨ [ปรับปรุง] ซ่อน Loading เสมอเมื่อเกิดข้อผิดพลาด
+        hideLoading();
         console.error("Auth Error:", error.code, error.message);
-        // ใช้ข้อความแสดงข้อผิดพลาดแบบทั่วไปเพื่อความปลอดภัย
         Swal.fire('เข้าสู่ระบบไม่สำเร็จ!', "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง", 'error'); 
     }
 }
@@ -175,3 +172,53 @@ firebase.auth().onAuthStateChanged((user) => {
         window.location.replace('login.html');
     }
 });
+
+async function changeUserPassword() {
+    const currentPassword = document.getElementById('currentPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmNewPassword = document.getElementById('confirmNewPassword').value;
+
+    // 1. ตรวจสอบความถูกต้องเบื้องต้น
+    if (!currentPassword || !newPassword || !confirmNewPassword) {
+        return Swal.fire('ข้อผิดพลาด', 'กรุณากรอกข้อมูลให้ครบทุกช่อง', 'warning');
+    }
+    if (newPassword.length < 6) {
+        return Swal.fire('ข้อผิดพลาด', 'รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร', 'warning');
+    }
+    if (newPassword !== confirmNewPassword) {
+        return Swal.fire('ข้อผิดพลาด', 'รหัสผ่านใหม่ไม่ตรงกัน', 'error');
+    }
+
+    const user = firebase.auth().currentUser;
+
+    if (user) {
+        showLoading('กำลังดำเนินการ...');
+
+        try {
+            // 2. Re-authenticate: ต้องยืนยันตัวตนด้วยรหัสเดิมก่อน (สำคัญมากใน Firebase)
+            const credential = firebase.auth.EmailAuthProvider.credential(user.email, currentPassword);
+            await user.reauthenticateWithCredential(credential);
+
+            // 3. เมื่อยืนยันผ่านแล้ว จึงทำการเปลี่ยนรหัส
+            await user.updatePassword(newPassword);
+
+            hideLoading();
+            await Swal.fire('สำเร็จ!', 'เปลี่ยนรหัสผ่านเรียบร้อยแล้ว กรุณาเข้าสู่ระบบใหม่', 'success');
+            
+            // 4. บังคับ Logout ให้เข้าใหม่
+            logoutUser();
+
+        } catch (error) {
+            hideLoading();
+            console.error("Change Password Error:", error);
+            
+            if (error.code === 'auth/wrong-password') {
+                Swal.fire('ผิดพลาด', 'รหัสผ่านปัจจุบันไม่ถูกต้อง', 'error');
+            } else {
+                Swal.fire('ผิดพลาด', 'เกิดข้อผิดพลาด: ' + error.message, 'error');
+            }
+        }
+    } else {
+        Swal.fire('ข้อผิดพลาด', 'ไม่พบข้อมูลผู้ใช้ โปรดล็อกอินใหม่', 'error');
+    }
+}

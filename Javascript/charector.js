@@ -16,9 +16,8 @@
  * Helper function to calculate stat bonus.
  */
 function getStatBonus(statValue) {
-    const value = Number(statValue);
-    const validValue = isNaN(value) ? 10 : value;
-    return Math.floor((validValue - 10) / 2);
+    if (typeof statValue !== 'number') return 0; // ป้องกัน Error
+    return Math.floor((statValue - 10) / 2);
 }
 
 /**

@@ -1,27 +1,4 @@
-/*
-* =================================================================
-* Javascript/skills-data.js (v3.1 - อัปเกรดโบนัสอาชีพ)
-* -----------------------------------------------------------------
-* นี่คือฐานข้อมูล "กฎ" ของเกมทั้งหมด (Rulebook)
-* ไฟล์นี้ถูกยืนยันความถูกต้องตามข้อกำหนด V3 (ข้อ 10, 11, 12)
-*
-* [อัปเดต] เพิ่มโบนัสสเตตัส (bonuses) ให้กับทุกอาชีพใน CLASS_DATA
-*
-* ประกอบด้วย:
-* 1. RACE_DATA (ข้อ 11: ฐานข้อมูลเผ่าพันธุ์ใหม่)
-* 2. CLASS_DATA (ข้อ 10: ฐานข้อมูลสายอาชีพใหม่ + โบนัสสเตตัส)
-* 3. CLASS_WEAPON_PROFICIENCY (ข้อ 5: ความชำนาญอาวุธ)
-* 4. SKILL_DATA (ข้อ 12: ฐานข้อมูลสกิลใหม่ทั้งหมด)
-* 5. ELEMENT_REACTIONS (ข้อ 12: ปฏิกิริยาธาตุ)
-* =================================================================
-*/
 
-/**
- * -----------------------------------------------------------------
- * 1. ฐานข้อมูลเผ่าพันธุ์ (ข้อ 11)
- * -----------------------------------------------------------------
- * เก็บโบนัส, สกิลติดตัว, และเงื่อนไขการวิวัฒนาการ
- */
 const RACE_DATA = {
     // --- เผ่าพันธุ์พื้นฐาน ---
     'มนุษย์': {
@@ -1467,3 +1444,39 @@ const ELEMENT_REACTIONS = {
         'HOLY': { effect: 'Exorcise', multiplier: 2.0, debuff: 'WEAKNESS_25', durationDice: 'd4', clears: ['DARK', 'HOLY'] }
     }
 };
+
+function checkElementalReaction(targetData, incomingElement) {
+    // 1. ตรวจสอบว่ามีข้อมูล Effect หรือไม่
+    if (!targetData.activeEffects) return null;
+    
+    // 2. ค้นหาว่าเป้าหมาย "ติดธาตุ" (ELEMENTAL_STATUS) อะไรอยู่หรือไม่
+    const existingElementEffect = targetData.activeEffects.find(e => e.type === 'ELEMENTAL_STATUS');
+    
+    // ถ้าศัตรูตัวเปล่า ไม่ติดธาตุ -> ไม่เกิด Reaction (แต่จะไปติดธาตุใหม่แทนในขั้นตอนถัดไป)
+    if (!existingElementEffect) return null;
+
+    const currentElement = existingElementEffect.amount; // เช่น 'ICE'
+    
+    // 3. ตรวจสอบตาราง Reaction (ต้องมั่นใจว่าโหลด skills-data.js แล้ว)
+    if (typeof ELEMENT_REACTIONS === 'undefined') {
+        console.error("ไม่พบตาราง ELEMENT_REACTIONS กรุณาโหลด skills-data.js");
+        return null;
+    }
+
+    // 4. จับคู่ธาตุ: เช็คทั้ง [ธาตุเก่า][ธาตุใหม่] และ [ธาตุใหม่][ธาตุเก่า] เผื่อตารางเขียนสลับกัน
+    const reaction = ELEMENT_REACTIONS[currentElement]?.[incomingElement] || 
+                     ELEMENT_REACTIONS[incomingElement]?.[currentElement];
+    
+    if (reaction) {
+        // เจอคู่ผสม! คืนค่าผลลัพธ์กลับไป
+        return {
+            name: reaction.effect,           // ชื่อท่า เช่น "Vaporize"
+            multiplier: reaction.multiplier || 1.0, // ตัวคูณดาเมจ
+            status: reaction.status,         // สถานะผิดปกติที่แถมมา (เช่น แช่แข็ง)
+            clears: reaction.clears          // ธาตุที่จะถูกลบออกหลังระเบิด
+        };
+    }
+    
+    // ไม่เข้าคู่ใดเลย
+    return null;
+}
