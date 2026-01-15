@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Social Fixed Layers</title>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        /* --- Reset & Base --- */
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; padding: 0;
+            background: rgba(0, 0, 0, 0.85);
+            font-family: 'Prompt', sans-serif;
+            color: white;
+            width: 100vw; height: 100vh;
+            overflow: hidden;
+            display: flex; justify-content: center; align-items: center;
+        }
+
+        /* กล่องหลัก */
+        #social-window {
+            width: 95%; max-width: 1100px;
+            height: 90%; max-height: 800px;
+            background: #111;
+            border: 2px solid #ffae00;
+            border-radius: 12px;
+            position: relative;
+            box-shadow: 0 0 40px rgba(0,0,0,0.8);
+            overflow: hidden;
+        }
+
+        /* --- Sidebar (ซ้าย) --- */
+        #layer-sidebar {
+            position: absolute; top: 0; left: 0; bottom: 0; width: 280px;
+            background: #1a1a1a; border-right: 1px solid #333; z-index: 10;
+            display: flex; flex-direction: column;
+        }
+        .sidebar-header { height: 120px; padding: 15px; background: #222; border-bottom: 2px solid #ffae00; }
+        .sidebar-scroll-area { flex: 1; overflow-y: auto; padding: 10px; }
+
+        /* --- Chat Display (ขวา) --- */
+        #layer-chat-display {
+            position: absolute; top: 0; right: 0; left: 280px; bottom: 70px;
+            background: #000; z-index: 5;
+            overflow-y: auto; overflow-x: hidden;
+            padding: 20px;
+            display: flex; flex-direction: column; gap: 15px; /* เว้นระยะห่างแต่ละข้อความ */
+            background-image: radial-gradient(#222 1px, transparent 1px); background-size: 20px 20px;
+        }
+
+        /* --- Chat Input (ขวา - ช่องพิมพ์) --- */
+        #layer-chat-input {
+            position: absolute; bottom: 0; right: 0; left: 280px; height: 70px;
+            background: rgba(30, 30, 30, 0.95); border-top: 1px solid #ffae00; z-index: 20;
+            display: flex; align-items: center; padding: 0 15px; backdrop-filter: blur(5px);
+        }
+
+        /* --- Message Row Layout (ใหม่!) --- */
+        .msg-row {
+            display: flex;
+            align-items: flex-start; /* จัดให้รูปอยู่บนสุดเสมอ */
+            gap: 10px;
+            max-width: 80%; /* ไม่ให้ข้อความยาวทะลุจอ */
+            animation: slideUp 0.3s ease-out forwards;
+        }
+        
+        /* ฝั่งเรา (ขวา) */
+        .msg-row.mine {
+            align-self: flex-end; /* ชิดขวา */
+            flex-direction: row-reverse; /* รูปอยู่ขวา */
+        }
+        
+        /* ฝั่งคนอื่น (ซ้าย) */
+        .msg-row.other {
+            align-self: flex-start; /* ชิดซ้าย */
+        }
+
+        /* รูปโปรไฟล์ในแชท */
+        .msg-avatar-img {
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            border: 2px solid #555;
+            object-fit: cover;
+            cursor: pointer;
+            flex-shrink: 0; /* ห้ามหด */
+        }
+        .msg-row.mine .msg-avatar-img { border-color: #005c97; }
+        .msg-row.other .msg-avatar-img { border-color: #ffae00; }
+
+        /* กลุ่มเนื้อหา (ชื่อ + ข้อความ) */
+        .msg-content-col {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* ส่วนหัวข้อความ (ชื่อ + ยศ) */
+        .msg-header-info {
+            font-size: 0.8em;
+            margin-bottom: 4px;
+            color: #aaa;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .msg-row.mine .msg-header-info { justify-content: flex-end; } /* ชื่อฝั่งเราชิดขวา */
+
+        /* ตัวข้อความ (Bubble) */
+        .msg-bubble {
+            padding: 10px 15px;
+            border-radius: 12px;
+            position: relative;
+            line-height: 1.5;
+            font-size: 0.95em;
+            width: fit-content; /* ✅ ปรับความกว้างตามข้อความ */
+            word-break: break-word; /* ตัดคำถ้ายาวเกิน */
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        }
+
+        /* สีฝั่งเรา */
+        .msg-row.mine .msg-bubble {
+            background: linear-gradient(135deg, #005c97, #363795);
+            color: white;
+            border-top-right-radius: 0; /* มุมแหลมชี้ไปที่รูป */
+        }
+        
+        /* สีฝั่งคนอื่น */
+        .msg-row.other .msg-bubble {
+            background: #2a2a2a;
+            color: #ddd;
+            border: 1px solid #444;
+            border-top-left-radius: 0; /* มุมแหลมชี้ไปที่รูป */
+        }
+
+        /* ป้ายยศ */
+        .rank-badge {
+            font-size: 0.7em; padding: 1px 5px; border-radius: 4px; font-weight: bold; text-transform: uppercase;
+        }
+        .rank-admin { background: #d9534f; color: white; border: 1px solid #c9302c; }
+        .rank-beta { background: #5bc0de; color: white; border: 1px solid #46b8da; }
+
+        /* เวลา */
+        .msg-time {
+            font-size: 0.65em; opacity: 0.6; text-align: right; margin-top: 3px;
+        }
+
+        /* Animation */
+        @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Components */
+        .tab-btn { background: #333; color: #aaa; border: none; flex: 1; margin: 2px; padding: 8px; border-radius: 4px; cursor: pointer; }
+        .tab-btn.active { background: #ffae00; color: #000; font-weight: bold; }
+        .chat-input { flex: 1; padding: 10px 15px; border-radius: 20px; background: #000; border: 1px solid #444; color: white; outline: none; }
+        .send-btn { width: 45px; height: 45px; margin-left: 10px; border-radius: 50%; background: #ffae00; border: none; font-size: 1.2em; cursor: pointer; }
+
+        /* Modal */
+        #profileModal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; display: none; justify-content: center; align-items: center; }
+        .modal-box { background: #1c1c1c; border: 2px solid #ffae00; padding: 20px; border-radius: 10px; width: 350px; text-align: center; animation: zoomIn 0.3s; }
+        @keyframes zoomIn { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #111; }
+        ::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+<div id="social-window">
+    
+    <div id="layer-sidebar">
+        <div class="sidebar-header">
+            <h3 style="margin:0 0 10px 0; color:#ffae00;">💬 Social Hub</h3>
+            <div style="display:flex; flex-wrap:wrap;">
+                <button class="tab-btn active" onclick="switchTab('world')">🌎 โลก</button>
+                <button class="tab-btn" onclick="switchTab('friends')">👥 เพื่อน</button>
+                <button class="tab-btn" onclick="switchTab('add')">➕ เพิ่ม</button>
+                <button class="tab-btn" onclick="switchTab('requests')">🔔 <span id="reqCount">0</span></button>
+            </div>
+        </div>
+        <div id="sidebar-list" class="sidebar-scroll-area">
+            </div>
+    </div>
+
+    <div id="layer-chat-display">
+        <div style="text-align:center; color:#555; margin-top:50px;">
+            ยินดีต้อนรับสู่แชทโลก<br>พื้นที่พูดคุยสำหรับนักผจญภัย
+        </div>
+    </div>
+
+    <div id="layer-chat-input">
+        <input type="text" id="chatInput" class="chat-input" placeholder="พิมพ์ข้อความที่นี่...">
+        <button class="send-btn" onclick="sendMessageAction()">➤</button>
+    </div>
+
+</div>
+
+<div id="profileModal">
+    <div class="modal-box">
+        <button onclick="document.getElementById('profileModal').style.display='none'" style="float:right; background:none; border:none; color:red; font-size:1.5em; cursor:pointer;">&times;</button>
+        <img id="modalAvatar" src="" style="width:100px; height:100px; border-radius:50%; border:3px solid #ffae00; object-fit:cover; margin-bottom:10px;">
+        <h2 id="modalName" style="color:#ffae00; margin:0;">Username</h2>
+        <div id="modalRole" style="margin-bottom:10px;"></div>
+        <div style="background:#333; padding:10px; border-radius:5px; margin:10px 0; font-style:italic; color:#aaa;">"<span id="modalBio">-</span>"</div>
+        <button id="modalActionBtn" style="padding:8px 15px; border-radius:5px; border:none; background:#28a745; color:white; cursor:pointer; width:100%;">Button</button>
+    </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<script src="Javascript/firebase-init.js"></script>
+<script src="Javascript/ui-helpers.js"></script>
+<script src="Javascript/social.js"></script>
+
+</body>
+</html>

@@ -25,7 +25,7 @@
         #volume-control {
             position: fixed;
             bottom: 20px;
-            right: 20px;
+            left: 20px;
             background-color: rgba(0, 0, 0, 0.5);
             padding: 10px 15px;
             border-radius: 50px;
@@ -61,6 +61,31 @@
     </style>
 </head>
 <body>
+    <div style="position:fixed; bottom:20px; right:20px; z-index:999;">
+        <button onclick="openSocialWindow()" style="
+            background: linear-gradient(135deg, #ffae00, #ff4500);
+            color: white;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            width: 60px; height: 60px;
+            font-size: 24px;
+            box-shadow: 0 0 15px rgba(255, 69, 0, 0.8);
+            cursor: pointer;
+            transition: transform 0.2s;
+        " title="เพื่อน & แชท">
+            💬
+        </button>
+    </div>
+
+    <script>
+        // เพิ่มฟังก์ชันนี้ใน script ของ lobby.html (หรือใส่ไว้ท้าย body)
+        function openSocialWindow() {
+            // เปิดหน้าต่างใหม่แบบ Popup
+            window.open('social.html', 'SocialWindow', 'width=1000,height=700,resizable=yes,scrollbars=yes');
+        }
+    </script>
+
+    
     <div id="background-layers">
         <div id="bg-layer-1" class="bg-layer"></div>
         <div id="bg-layer-2" class="bg-layer"></div>

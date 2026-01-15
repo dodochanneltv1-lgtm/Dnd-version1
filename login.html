@@ -64,5 +64,23 @@
     <script src="Javascript/ui-helpers.js"></script>
     <script src="Javascript/auth.js"></script>
 
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // โชว์ Loading รอตรวจสอบสักครู่ เพื่อไม่ให้เห็นหน้า Login แวบๆ
+            if(typeof showLoading === 'function') showLoading('กำลังตรวจสอบสถานะ...');
+
+            firebase.auth().onAuthStateChanged((user) => {
+                if (user) {
+                    // ✅ ถ้ามี User ค้างอยู่ -> ดีดไปหน้า Lobby เลย
+                    console.log("พบผู้ใช้เดิม: " + user.email);
+                    window.location.replace('lobby.html');
+                } else {
+                    // ❌ ถ้าไม่มี -> ปิด Loading แล้วให้กรอกรหัสตามปกติ
+                    if(typeof hideLoading === 'function') hideLoading();
+                    console.log("ยังไม่ได้ล็อกอิน");
+                }
+            });
+        });
+    </script>
 </body>
 </html>

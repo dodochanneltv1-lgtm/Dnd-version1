@@ -162,11 +162,18 @@
 </head>
 <body>
     <div class="lobby-header">
-        <span>ยินดีต้อนรับ, <span id="userEmail"></span></span>
+        <div style="display:flex; align-items:center; gap:10px;">
+            <img id="lobbyAvatar" src="" style="width:40px; height:40px; border-radius:50%; border:2px solid gold; display:none;">
+            <span>ชื่อผู้ใช้ : <span id="userEmail"></span></span>
+        </div>
+
         <div style="display:flex; gap: 10px;">
             <a href="tutorial.html" target="_self"><button style="background-color:#007bff; width: auto;">📖 คู่มือ/วิธีเล่น</button></a>
+            <a href="profile.html"><button style="background-color:#6f42c1; width: auto;">👤 โปรไฟล์</button></a>
+            <a href="change-password.html"><button style="background-color:#ffc107; color:black; width: auto;">🔑 เปลี่ยนรหัส</button></a>
             <button onclick="logoutUser()" style="background-color:#dc3545; width: auto;">🚪 ออกจากระบบ</button>
         </div>
+        
     </div>
 
     <h2 style="text-align:center; color: #ffd700; text-shadow: 0 0 8px #ff4500;">DnD LOBBY CENTER</h2>

@@ -325,3 +325,53 @@ td input {
     border: 1px solid #ffae00 !important;
     color: #fff !important;
 }
+
+
+/* --- System Roles & Admin Controls --- */
+.role-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 15px;
+    font-size: 0.8em;
+    font-weight: bold;
+    margin-left: 10px;
+    text-transform: uppercase;
+    box-shadow: 0 0 5px rgba(0,0,0,0.5);
+}
+
+.role-admin {
+    background: linear-gradient(90deg, #ff0000, #800000);
+    color: #fff;
+    border: 1px solid #ff4d4d;
+}
+
+.role-beta {
+    background: linear-gradient(90deg, #00c6ff, #0072ff);
+    color: #fff;
+    border: 1px solid #00c6ff;
+}
+
+/* ปุ่มควบคุมในหน้า Lobby (ลบ/ดูรหัส) */
+.lobby-controls {
+    margin-top: 10px;
+    padding-top: 5px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.2);
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.btn-mini {
+    padding: 2px 8px;
+    font-size: 0.8em;
+    width: auto;
+    margin: 0;
+    border-radius: 4px;
+}
+
+.btn-show-pass {
+    background: #17a2b8;
+}
+.btn-delete-room {
+    background: #dc3545;
+}

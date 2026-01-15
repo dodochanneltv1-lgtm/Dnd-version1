@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>แก้ไขโปรไฟล์ - DnD System</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        .profile-container {
+            width: 100%;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 30px;
+            background: rgba(10, 0, 0, 0.85);
+            border: 2px solid #ffae00;
+            border-radius: 12px;
+            text-align: center;
+            color: white; /* เพิ่มสีตัวอักษรหลัก */
+        }
+
+        /* ส่วนแสดงรูปปัจจุบัน */
+        .current-avatar {
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            border: 4px solid #ffd700;
+            object-fit: cover;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+            margin-bottom: 20px;
+        }
+
+        /* ตารางเลือกรูป */
+        .avatar-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .avatar-option {
+            width: 80px;
+            height: 80px;
+            border-radius: 10px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: transform 0.2s, border-color 0.2s;
+            object-fit: cover;
+        }
+
+        .avatar-option:hover {
+            transform: scale(1.1);
+            border-color: #aaa;
+        }
+
+        /* สไตล์ตอนเลือกแล้ว */
+        .avatar-option.selected {
+            border-color: #00ff00;
+            box-shadow: 0 0 10px #00ff00;
+            transform: scale(1.1);
+        }
+
+        input[type="text"], textarea {
+            width: 80%;
+            padding: 10px;
+            margin-top: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid #555;
+            color: white;
+            font-size: 1.1em;
+            border-radius: 5px;
+        }
+        
+        input[type="text"] {
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="profile-container">
+        <h1>👤 แก้ไขโปรไฟล์</h1>
+        
+        <img id="currentAvatarDisplay" src="https://via.placeholder.com/150" class="current-avatar">
+        
+        <div>
+            <label style="color:#aaa;">ชื่อที่ใช้แสดง:</label><br>
+            <input type="text" id="displayNameInput" placeholder="ตั้งชื่อเท่ๆ ของคุณ">
+        </div>
+
+        <div style="margin-top: 20px;">
+            <label style="display:block; color:#aaa;">คำคม / Bio:</label>
+            <textarea id="bioInput" rows="3" placeholder="เขียนข้อความแนะนำตัว..."></textarea>
+        </div>
+
+        <hr style="border-color: #444; margin: 20px 0;">
+
+        <h3 style="color:#ffc107;">เลือกรูปประจำตัว</h3>
+        <div class="avatar-grid" id="avatarGrid">
+            </div>
+
+        <div style="margin-top: 30px; display: flex; gap: 10px; justify-content: center;">
+            <button onclick="saveProfile()" style="background: linear-gradient(90deg, #28a745, #1e7e34); color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">💾 บันทึกข้อมูล</button>
+            <button onclick="window.location.href='lobby.html'" style="background: #555; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">ย้อนกลับ</button>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    
+    <script src="Javascript/firebase-init.js"></script>
+    <script src="Javascript/ui-helpers.js"></script>
+
+    <script>
+        // -------------------------------------------------------------
+        // 1. ตั้งค่ารายการรูปภาพ
+        // -------------------------------------------------------------
+        const availableAvatars = [
+            "Profile/Profile_1.jpg",
+            "Profile/Profile_2.jpg",
+            "Profile/Profile_3.jpg",
+            "Profile/Profile_4.jpg",
+            "Profile/Profile_5.jpg",
+        ];
+
+        let selectedAvatarUrl = ""; // ตัวแปรเก็บรูปล่าสุดที่เลือก
+
+        // -------------------------------------------------------------
+        // 2. โหลดข้อมูลเมื่อเปิดหน้าเว็บ
+        // -------------------------------------------------------------
+        firebase.auth().onAuthStateChanged(user => {
+            if (user) {
+                // ดึงข้อมูลเดิมมาโชว์
+                document.getElementById('displayNameInput').value = user.displayName || "";
+                const currentPhoto = user.photoURL || "https://via.placeholder.com/150";
+                document.getElementById('currentAvatarDisplay').src = currentPhoto;
+                selectedAvatarUrl = currentPhoto; // ตั้งค่าเริ่มต้น
+
+                renderAvatarGrid();
+
+                // โหลดข้อมูล Bio จาก Database
+                db.ref('users/' + user.uid).once('value').then(snapshot => {
+                    const data = snapshot.val();
+                    if (data && data.bio) {
+                        document.getElementById('bioInput').value = data.bio;
+                    }
+                });
+            } else {
+                // ถ้าไม่ได้ล็อกอิน ให้ดีดกลับไปหน้า Login
+                window.location.href = 'login.html';
+            }
+        });
+
+        // -------------------------------------------------------------
+        // 3. ฟังก์ชันบันทึกข้อมูล (เหลือแค่อันเดียวที่ถูกต้องแล้ว!)
+        // -------------------------------------------------------------
+        async function saveProfile() {
+            const user = firebase.auth().currentUser;
+            const newName = document.getElementById('displayNameInput').value.trim();
+            const newBio = document.getElementById('bioInput').value.trim(); // รับค่าคำคม
+
+            if (!newName) return Swal.fire('เตือน', 'กรุณาใส่ชื่อ', 'warning');
+
+            showLoading('กำลังบันทึก...');
+
+            try {
+                // 1. อัปเดต Auth Profile (ชื่อและรูป)
+                await user.updateProfile({
+                    displayName: newName,
+                    photoURL: selectedAvatarUrl
+                });
+
+                // 2. อัปเดต Database (รวม Bio ด้วย)
+                await db.ref('users/' + user.uid).update({
+                    username: newName,
+                    bio: newBio, // บันทึกคำคมลงฐานข้อมูล
+                    email: user.email,
+                    photoURL: selectedAvatarUrl,
+                    lastUpdated: firebase.database.ServerValue.TIMESTAMP
+                });
+
+                hideLoading();
+                await Swal.fire('เรียบร้อย!', 'บันทึกโปรไฟล์สำเร็จ', 'success');
+                // window.location.replace('lobby.html'); // เปิดบรรทัดนี้ถ้าอยากให้เด้งกลับ Lobby ทันที
+            } catch (error) {
+                hideLoading();
+                console.error(error);
+                Swal.fire('ผิดพลาด', error.message, 'error');
+            }
+        }
+
+        // -------------------------------------------------------------
+        // 4. สร้าง Grid รูปภาพให้เลือก
+        // -------------------------------------------------------------
+        function renderAvatarGrid() {
+            const grid = document.getElementById('avatarGrid');
+            grid.innerHTML = "";
+
+            availableAvatars.forEach(url => {
+                const img = document.createElement('img');
+                img.src = url;
+                img.className = "avatar-option";
+                
+                // ถ้า URL ตรงกับที่เลือกอยู่ ให้ใส่กรอบเขียว
+                if (url === selectedAvatarUrl) img.classList.add('selected');
+
+                // กดแล้วเลือกรูปนี้
+                img.onclick = () => {
+                    // ลบคลาส selected จากรูปอื่น
+                    document.querySelectorAll('.avatar-option').forEach(el => el.classList.remove('selected'));
+                    // ใส่คลาส selected ให้รูปนี้
+                    img.classList.add('selected');
+                    // อัปเดตตัวแปรและรูปตัวอย่างด้านบน
+                    selectedAvatarUrl = url;
+                    document.getElementById('currentAvatarDisplay').src = url;
+                };
+
+                grid.appendChild(img);
+            });
+        }
+    </script>
+</body>
+</html>
