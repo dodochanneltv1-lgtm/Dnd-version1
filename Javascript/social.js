@@ -1,4 +1,4 @@
-// Javascript/social.js (Final Version: Mutual Friend Fix)
+// Javascript/social.js (Final Version: Unified Profile Modal)
 
 let currentUser = null;
 let currentChatType = 'world'; // 'world' | 'private'
@@ -78,12 +78,13 @@ function renderMsg(msg) {
     const row = document.createElement('div');
     row.className = `msg-row ${isMe ? 'mine' : 'other'}`;
     
-    // Avatar
+    // [แก้ไขจุดนี้] เปลี่ยน onclick ให้ไปเรียก openUserProfile (ตัวใหม่)
     const avatarHtml = `
         <img class="msg-avatar-img" 
              src="${msg.photoURL || 'https://via.placeholder.com/40'}"
-             onclick="showUserProfile('${msg.senderUid || msg.sender}')" 
-             title="ดูข้อมูล">
+             onclick="openUserProfile('${msg.senderUid || msg.sender}')" 
+             style="cursor: pointer;"
+             title="ดูโปรไฟล์">
     `;
 
     // Role Badge
@@ -169,15 +170,17 @@ function loadFriends() {
             const uid = uSnap.key;
             const isOnline = u.status === 'online';
             
+            // [แก้ไขจุดนี้] คลิกเพื่อนในลิสต์ ก็ให้เปิดแชทเลย (หรือจะแก้เป็น openUserProfile ก็ได้ถ้าต้องการ)
             const div = document.createElement('div');
-            div.style.cssText = "padding:10px; border-bottom:1px solid #333; cursor:pointer; display:flex; align-items:center;";
+            div.className = 'friend-card'; // ใช้ class จาก CSS ใหม่
+            div.style.cursor = "pointer";
             div.onclick = () => openPrivate(uid, u.username);
             
             div.innerHTML = `
-                <img src="${u.photoURL}" style="width:35px; height:35px; border-radius:50%; margin-right:10px;">
-                <div>
-                    <div style="font-weight:bold; color:${isOnline?'#0f0':'#ccc'}">${u.username}</div>
-                    <div style="font-size:0.8em; color:#666;">${isOnline?'ออนไลน์':'ออฟไลน์'}</div>
+                <img src="${u.photoURL}" style="width:40px; height:40px; border-radius:50%; margin-right:10px; border:2px solid ${isOnline?'#2ecc71':'#555'}">
+                <div class="friend-info">
+                    <div style="font-weight:bold; color:white;">${u.username}</div>
+                    <div style="font-size:0.8em; color:${isOnline?'#2ecc71':'#888'};">${isOnline?'Online':'Offline'}</div>
                 </div>
             `;
             sidebar.appendChild(div);
@@ -189,14 +192,18 @@ function openPrivate(uid, name) {
     currentChatType = 'private';
     currentChatTargetId = uid;
     loadChat(`chats/${getChatId(currentUser.uid, uid)}`);
+    
+    // เปลี่ยน Header ให้รู้ว่าคุยกับใคร
+    const sidebar = document.getElementById('sidebar-list');
+    // ถ้าอยู่ในโหมดเพื่อน ไม่ต้องล้าง Sidebar แต่ถ้าจะให้ชัดเจนก็ทำได้
 }
 
 function renderSearchUI(container) {
     container.innerHTML = `
         <div style="padding:10px;">
-            <input id="sInput" placeholder="ชื่อเพื่อน..." style="width:100%; padding:8px; background:#333; border:1px solid #555; color:#fff;">
-            <button onclick="doSearch()" style="width:100%; margin-top:5px; padding:5px; background:#ffae00; border:none; cursor:pointer;">ค้นหา</button>
-            <div id="sRes" style="margin-top:10px;"></div>
+            <input id="sInput" placeholder="ค้นหาจากชื่อ..." class="chat-input" style="width:100%; margin-bottom:10px;">
+            <button onclick="doSearch()" class="tab-btn active" style="width:100%; justify-content:center;">🔍 ค้นหา</button>
+            <div id="sRes" style="margin-top:15px; display:flex; flex-direction:column; gap:10px;"></div>
         </div>
     `;
 }
@@ -204,90 +211,70 @@ function renderSearchUI(container) {
 function doSearch() {
     const val = document.getElementById('sInput').value.trim();
     if(!val) return;
-    db.ref('users').orderByChild('username').equalTo(val).once('value').then(s => {
+    
+    db.ref('users').orderByChild('username').startAt(val).endAt(val+"\uf8ff").once('value').then(s => {
         const res = document.getElementById('sRes');
         res.innerHTML = '';
-        if(!s.exists()) { res.innerHTML = '<span style="color:red">ไม่พบ</span>'; return; }
-        s.forEach(async c => {
+        if(!s.exists()) { res.innerHTML = '<span style="color:#aaa; text-align:center;">ไม่พบผู้ใช้งาน</span>'; return; }
+        
+        s.forEach(c => {
             const u = c.val();
             const uid = c.key;
             if(uid === currentUser.uid) return;
 
-            // ตรวจสอบสถานะเพื่อแสดงปุ่มให้ถูก
-            let btnHtml = await getFriendButtonState(uid);
-            
-            // สร้าง Element
             const div = document.createElement('div');
-            div.style.cssText = "background:#222; padding:5px; margin-bottom:5px; display:flex; align-items:center;";
+            div.className = 'friend-card';
             div.innerHTML = `
-                <img src="${u.photoURL}" style="width:30px; height:30px; border-radius:50%; margin-right:5px;">
-                <span style="flex:1">${u.username}</span>
-                ${btnHtml}
+                <img src="${u.photoURL}" style="width:40px; height:40px; border-radius:50%; margin-right:10px; border:1px solid #ffae00;">
+                <div style="flex:1; color:white;">${u.username}</div>
+                <button onclick="openUserProfile('${uid}')" style="background:#ffae00; border:none; border-radius:5px; padding:5px 10px; cursor:pointer;">ดู</button>
             `;
             res.appendChild(div);
         });
     });
 }
 
-// 🔥 Helper ตรวจสอบสถานะเพื่อนสำหรับปุ่ม (Search)
-async function getFriendButtonState(targetUid) {
-    // 1. เป็นเพื่อนกันแล้ว?
-    const isFriend = (await db.ref(`users/${currentUser.uid}/friends/${targetUid}`).get()).exists();
-    if (isFriend) return `<button disabled style="background:#555; color:#fff; border:none; padding:2px 5px;">เพื่อนแล้ว</button>`;
-
-    // 2. เขาแอดเรามา? (Incoming)
-    const incoming = (await db.ref(`friend_requests/${currentUser.uid}/${targetUid}`).get()).exists();
-    if (incoming) return `<button onclick="handleSmartAdd('${targetUid}')" style="background:#17a2b8; color:#fff; border:none; padding:2px 5px; cursor:pointer;">รับแอด</button>`;
-
-    // 3. เราแอดเขาไป? (Outgoing - เช็คยากหน่อยถ้าไม่มี Node เก็บ แต่เราปล่อยให้กด + ได้ มันจะแค่ทับอันเดิม)
-    return `<button onclick="handleSmartAdd('${targetUid}')" style="background:green; color:#fff; border:none; padding:2px 8px; cursor:pointer;">+</button>`;
-}
-
-// 🔥 [CORE FIX] ระบบแอดเพื่อนอัจฉริยะ (จัดการ Mutual Request)
+// 🔥 [CORE FIX] ระบบแอดเพื่อนอัจฉริยะ
 async function handleSmartAdd(targetUid) {
-    // 1. เช็คก่อนว่า "เขาแอดเรามาหรือยัง?" (เช็คใน Inbox เรา)
+    // 1. เช็คก่อนว่า "เขาแอดเรามาหรือยัง?"
     const incomingReq = await db.ref(`friend_requests/${currentUser.uid}/${targetUid}`).get();
 
     if (incomingReq.exists()) {
-        // CASE A: เขาแอดมาแล้ว -> เรากดแอดกลับ = รับเพื่อนทันที! (Mutual Fix)
-        await ansReq(targetUid, true); // เรียกฟังก์ชันรับเพื่อน
-        Swal.fire('ยินดีด้วย!', 'คุณทั้งคู่ใจตรงกัน เป็นเพื่อนกันเรียบร้อย!', 'success');
+        await ansReq(targetUid, true);
+        Swal.fire('สำเร็จ!', 'เป็นเพื่อนกันเรียบร้อย!', 'success');
     } else {
-        // CASE B: ปกติ -> ส่งคำขอไปหาเขา
         await db.ref(`friend_requests/${targetUid}/${currentUser.uid}`).set({
-            fromName: currentUser.displayName || 'Unknown',
+            fromName: currentUser.displayName || currentUser.email,
             fromPhoto: currentUser.photoURL,
             timestamp: firebase.database.ServerValue.TIMESTAMP
         });
-        Swal.fire('ส่งคำขอแล้ว', '', 'success');
+        Swal.fire('ส่งคำขอแล้ว', 'รออีกฝ่ายตอบรับ', 'success');
     }
     
-    // Refresh UI ถ้าเปิด Modal อยู่
+    // Refresh UI
     if(document.getElementById('profileModal').style.display === 'flex') {
-        showUserProfile(targetUid);
+        openUserProfile(targetUid);
     }
-    // Refresh UI ถ้าค้นหาอยู่
-    const sInput = document.getElementById('sInput');
-    if(sInput && sInput.value) doSearch(); 
 }
 
 function loadReqs() {
     const sidebar = document.getElementById('sidebar-list');
     db.ref(`friend_requests/${currentUser.uid}`).on('value', s => {
         sidebar.innerHTML = '';
-        if(!s.exists()) { sidebar.innerHTML = '<div style="padding:20px; text-align:center;">ไม่มีคำขอ</div>'; return; }
+        if(!s.exists()) { sidebar.innerHTML = '<div style="padding:20px; text-align:center; color:#666;">ไม่มีคำขอใหม่</div>'; return; }
+        
         s.forEach(c => {
             const r = c.val();
             const uid = c.key;
             sidebar.innerHTML += `
-                <div style="padding:10px; border-bottom:1px solid #333;">
-                    <div style="display:flex; align-items:center; margin-bottom:5px;">
-                        <img src="${r.fromPhoto}" style="width:25px; height:25px; border-radius:50%; margin-right:5px;">
-                        <strong>${r.fromName}</strong>
+                <div class="friend-card" style="flex-direction:column; align-items:flex-start;">
+                    <div style="display:flex; align-items:center; margin-bottom:10px;">
+                        <img src="${r.fromPhoto}" style="width:35px; height:35px; border-radius:50%; margin-right:10px;">
+                        <strong style="color:white;">${r.fromName}</strong>
                     </div>
-                    <div style="display:flex; gap:5px;">
-                        <button onclick="ansReq('${uid}',true)" style="flex:1; background:green; border:none; color:white; cursor:pointer;">รับ</button>
-                        <button onclick="ansReq('${uid}',false)" style="flex:1; background:red; border:none; color:white; cursor:pointer;">ลบ</button>
+                    <div style="display:flex; gap:10px; width:100%;">
+                        <button onclick="ansReq('${uid}',true)" style="flex:1; background:#2ecc71; border:none; border-radius:5px; padding:5px; color:white; cursor:pointer;">รับแอด</button>
+                        <button onclick="ansReq('${uid}',false)" style="flex:1; background:#e74c3c; border:none; border-radius:5px; padding:5px; color:white; cursor:pointer;">ลบ</button>
                     </div>
                 </div>
             `;
@@ -297,91 +284,200 @@ function loadReqs() {
 
 // รับ/ลบเพื่อน
 async function ansReq(uid, ok) {
-    if(ok) {
-        let u = {};
-        u[`users/${currentUser.uid}/friends/${uid}`] = true;
-        u[`users/${uid}/friends/${currentUser.uid}`] = true;
-        u[`friend_requests/${currentUser.uid}/${uid}`] = null; // ลบคำขอฝั่งเรา
-        u[`friend_requests/${uid}/${currentUser.uid}`] = null; // (เผื่อ) ลบคำขอฝั่งเขาด้วย ถ้ามันค้าง
-        await db.ref().update(u);
-    } else {
-        await db.ref(`friend_requests/${currentUser.uid}/${uid}`).remove();
+    try {
+        if (ok) {
+            let updates = {};
+            updates[`users/${currentUser.uid}/friends/${uid}`] = true;
+            updates[`users/${uid}/friends/${currentUser.uid}`] = true;
+            updates[`friend_requests/${currentUser.uid}/${uid}`] = null; 
+            updates[`friend_requests/${uid}/${currentUser.uid}`] = null; 
+
+            await db.ref().update(updates);
+            Swal.fire('เรียบร้อย', 'เพิ่มเพื่อนสำเร็จ', 'success');
+        } else {
+            await db.ref(`friend_requests/${currentUser.uid}/${uid}`).remove();
+        }
+    } catch (error) {
+        Swal.fire('Error', error.message, 'error');
     }
 }
 
 function listenReq() {
     db.ref(`friend_requests/${currentUser.uid}`).on('value', s => {
         const c = s.numChildren();
-        document.getElementById('reqCount').innerText = c > 0 ? c : '';
+        const badge = document.getElementById('reqCount');
+        if(badge) badge.innerText = c > 0 ? c : '';
     });
 }
 
+function getChatId(u1, u2) { return u1 < u2 ? `${u1}_${u2}` : `${u2}_${u1}`; }
+
 // ==========================================
-// 5. Profile Modal (Logic ใหม่)
+// 5. 🆕 ULTRA PROFILE MODAL (Holo Edition)
 // ==========================================
-async function showUserProfile(uid) {
-    if(!uid) return;
-    document.getElementById('profileModal').style.display = 'flex';
-    
-    const s = await db.ref('users/'+uid).once('value');
-    const u = s.val();
-    
-    document.getElementById('modalAvatar').src = u.photoURL || '';
-    document.getElementById('modalName').innerText = u.username || 'Unknown';
-    document.getElementById('modalBio').innerText = u.bio || '-';
-    
-    const roleArea = document.getElementById('modalRole');
-    if (u.role === 'admin') roleArea.innerHTML = '<span style="color:red; font-weight:bold;">👑 ADMIN</span>';
-    else if (u.role === 'beta_tester') roleArea.innerHTML = '<span style="color:cyan; font-weight:bold;">🧪 TESTER</span>';
-    else roleArea.innerHTML = '<span style="color:#aaa;">นักผจญภัย</span>';
 
-    // ตั้งค่าปุ่ม Action
-    const btn = document.getElementById('modalActionBtn');
+let currentModalTargetUid = null;
+
+async function openUserProfile(targetUid) {
+    const modal = document.getElementById('profileModal');
+    const btnMain = document.getElementById('btnActionMain');
     
-    if (uid === currentUser.uid) {
-        btn.innerText = 'นี่คือตัวคุณ';
-        btn.disabled = true;
-        btn.style.background = '#555';
-        btn.onclick = null;
-        return;
+    // 1. Reset UI & Show Modal (เพื่อให้ Animation ทำงาน)
+    modal.style.display = 'flex'; 
+    
+    // Reset ค่าต่างๆ
+    document.getElementById('popupAvatar').src = 'https://via.placeholder.com/150';
+    document.getElementById('popupName').innerText = 'Loading...';
+    document.getElementById('popupBio').innerText = '...';
+    document.getElementById('popupUID').innerText = targetUid;
+    document.getElementById('popupJoinDate').innerText = '-';
+    document.getElementById('popupEmail').innerText = '-';
+    document.getElementById('popupFriendCount').innerText = '0';
+    
+    currentModalTargetUid = targetUid;
+
+    try {
+        // 2. ดึงข้อมูล User
+        const snap = await db.ref('users/' + targetUid).get();
+        if (!snap.exists()) {
+            document.getElementById('popupName').innerText = 'User Not Found';
+            return;
+        }
+        const user = snap.val();
+
+        // 3. เติมข้อมูลพื้นฐาน
+        document.getElementById('popupName').innerText = user.username || 'No Name';
+        document.getElementById('popupAvatar').src = user.photoURL || 'https://via.placeholder.com/150';
+        document.getElementById('popupBio').innerText = user.bio || "ผู้เล่นคนนี้ไม่ได้เขียนอะไรไว้...";
+        
+        // วันที่สมัคร
+        if (user.createdAt) {
+            document.getElementById('popupJoinDate').innerText = new Date(user.createdAt).toLocaleDateString('th-TH');
+        }
+
+        // อีเมล (Masked)
+        if (user.email) {
+            document.getElementById('popupEmail').innerText = user.email.replace(/(.{2})(.*)(@.*)/, "$1***$3");
+        }
+
+        // จำนวนเพื่อน
+        if (user.friends) {
+            document.getElementById('popupFriendCount').innerText = Object.keys(user.friends).length;
+        }
+
+        // --- 4. จัดการ Yos (Rank & Badge) แบบจัดเต็ม ---
+        const badgeElem = document.getElementById('popupRoleBadge');
+        const ringElem = document.querySelector('.avatar-ring'); // วงแหวนรอบรูป
+
+        // Reset Classes
+        badgeElem.className = 'badge-float'; 
+        
+        if (user.role === 'admin') {
+            badgeElem.innerText = 'ADMIN';
+            badgeElem.classList.add('badge-admin'); // สีแดง
+            ringElem.style.borderColor = '#ff4d4d'; // วงแหวนแดง
+            ringElem.style.borderTopColor = 'transparent';
+        } 
+        else if (user.role === 'beta_tester') {
+            badgeElem.innerText = 'BETA TESTER';
+            badgeElem.classList.add('badge-tester'); // สีฟ้า Neon
+            ringElem.style.borderColor = '#00d2ff'; // วงแหวนฟ้า
+            ringElem.style.borderTopColor = 'transparent';
+        } 
+        else {
+            badgeElem.innerText = 'ADVENTURER';
+            badgeElem.classList.add('badge-user'); // สีเทา
+            ringElem.style.borderColor = '#666'; 
+            ringElem.style.borderTopColor = 'transparent';
+        }
+
+        // --- 5. Status Dot ---
+        const statusText = document.getElementById('popupStatusText');
+        const statusDot = document.getElementById('popupStatusDot');
+        
+        if (user.status === 'online') {
+            statusText.innerText = 'Online';
+            statusText.style.color = '#2ecc71';
+            statusDot.className = 'dot online-dot';
+        } else {
+            statusText.innerText = 'Offline';
+            statusText.style.color = '#7f8c8d';
+            statusDot.className = 'dot';
+        }
+
+        // --- 6. ปุ่ม Action ---
+        // Reset Style
+        btnMain.className = 'holo-btn btn-main';
+        btnMain.disabled = false;
+
+        if (targetUid === currentUser.uid) {
+            btnMain.innerText = '✏️ EDIT PROFILE';
+            btnMain.className = 'holo-btn btn-main';
+            btnMain.onclick = () => openEditProfileModal();
+        } else {
+            const friendSnap = await db.ref(`users/${currentUser.uid}/friends/${targetUid}`).get();
+            
+            if (friendSnap.exists()) {
+                btnMain.innerText = '💬 CHAT';
+                btnMain.className = 'holo-btn btn-chat';
+                btnMain.onclick = () => {
+                    closeProfileModal();
+                    openPrivate(targetUid, user.username);
+                };
+            } else {
+                const incomingReq = await db.ref(`friend_requests/${currentUser.uid}/${targetUid}`).get();
+                if (incomingReq.exists()) {
+                    btnMain.innerText = '✅ ACCEPT FRIEND';
+                    btnMain.className = 'holo-btn btn-success';
+                    btnMain.onclick = () => handleSmartAdd(targetUid);
+                } else {
+                    btnMain.innerText = '➕ ADD FRIEND';
+                    btnMain.onclick = () => {
+                        handleSmartAdd(targetUid);
+                        btnMain.innerText = 'REQUEST SENT';
+                        btnMain.disabled = true;
+                    };
+                }
+            }
+        }
+
+    } catch (err) {
+        console.error(err);
     }
-
-    // 🔥 1. เช็คว่าเป็นเพื่อนยัง?
-    const isFriend = (await db.ref(`users/${currentUser.uid}/friends/${uid}`).get()).exists();
-    if(isFriend) {
-        btn.innerText = '💬 ทักแชท';
-        btn.disabled = false;
-        btn.style.background = '#17a2b8';
-        btn.onclick = () => {
-            document.getElementById('profileModal').style.display = 'none';
-            openPrivate(uid, u.username);
-        };
-        return;
-    }
-
-    // 🔥 2. เช็คว่าเขาแอดเรามาหรือยัง? (Incoming)
-    const incomingReq = (await db.ref(`friend_requests/${currentUser.uid}/${uid}`).get()).exists();
-    if (incomingReq) {
-        btn.innerText = '✅ ตอบรับคำขอ'; // ปุ่มเปลี่ยนเป็นรับเพื่อนทันที
-        btn.disabled = false;
-        btn.style.background = '#28a745';
-        btn.onclick = () => {
-            handleSmartAdd(uid); // ใช้ฟังก์ชันอัจฉริยะ รับเพื่อนเลย
-            btn.innerText = 'เป็นเพื่อนแล้ว';
-            btn.disabled = true;
-        };
-        return;
-    }
-
-    // 🔥 3. ถ้าไม่มีอะไรเลย หรือเราแอดไปแล้ว (Default)
-    btn.innerText = '➕ เพิ่มเพื่อน';
-    btn.disabled = false;
-    btn.style.background = '#28a745';
-    btn.onclick = () => {
-        handleSmartAdd(uid);
-        btn.innerText = 'ส่งคำขอแล้ว';
-        btn.disabled = true;
-    };
 }
 
-function getChatId(u1, u2) { return u1 < u2 ? `${u1}_${u2}` : `${u2}_${u1}`; }
+// ปิด Modal
+function closeProfileModal(e) {
+    if (e && e.target.id !== 'profileModal' && e.target.className !== 'close-holo-btn') return;
+    document.getElementById('profileModal').style.display = 'none';
+}
+
+function copyPopupUID() {
+    const uid = document.getElementById('popupUID').innerText;
+    navigator.clipboard.writeText(uid);
+    const tooltip = document.getElementById('copyTooltip');
+    tooltip.style.display = 'block';
+    setTimeout(() => tooltip.style.display = 'none', 1500);
+}
+
+function openEditProfileModal() {
+    // ปิดหน้าดูโปรไฟล์ก่อน (ถ้าเปิดอยู่)
+    document.getElementById('profileModal').style.display = 'none';
+    
+    // ตั้งค่า Iframe ให้โหลดหน้า profile.html
+    const iframe = document.getElementById('editProfileFrame');
+    iframe.src = 'profile.html?mode=iframe'; // ส่ง parameter ไปบอกว่าอยู่ใน iframe
+    
+    // แสดง Modal
+    document.getElementById('editProfileModal').style.display = 'flex';
+}
+
+// ฟังก์ชันนี้จะถูกเรียกจากภายใน Iframe (profile.html) เมื่อกดปุ่ม "ย้อนกลับ"
+window.closeEditProfileModal = function() {
+    document.getElementById('editProfileModal').style.display = 'none';
+    
+    // (Optional) รีเฟรชข้อมูลผู้ใช้ปัจจุบันในหน้าหลักเผื่อมีการเปลี่ยนรูป/ชื่อ
+    if (currentUser) {
+        // อาจจะเรียกฟังก์ชันอัปเดต UI หน้าจอหลักที่นี่
+    }
+}

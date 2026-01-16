@@ -3,226 +3,893 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>แก้ไขโปรไฟล์ - DnD System</title>
+    <title>Ultimate Profile - DnD System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600;700&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
     <style>
-        .profile-container {
-            width: 100%;
-            max-width: 600px;
-            margin: 50px auto;
-            padding: 30px;
-            background: rgba(10, 0, 0, 0.85);
-            border: 2px solid #ffae00;
-            border-radius: 12px;
-            text-align: center;
-            color: white; /* เพิ่มสีตัวอักษรหลัก */
+        /* =========================================
+           1. THEME ENGINE & CORE
+           ========================================= */
+        :root {
+            --theme-color: #ffffff;
+            --avatar-border-color: #ffffff;
+            --card-border-color: #ffffff;
+            --bg-line-color: #ffffff;
+            --cover-border-color: #ffffff;
+            --anim-speed: 2s;       
+            --glow-intensity: 10px; 
+            --bg-dark: #050508;
+            --card-bg: rgba(20, 20, 25, 0.95);
+            --font-main: 'Prompt', sans-serif;
+            --font-tech: 'Rajdhani', sans-serif;
         }
 
-        /* ส่วนแสดงรูปปัจจุบัน */
-        .current-avatar {
-            width: 150px;
-            height: 150px;
-            border-radius: 50%;
-            border: 4px solid #ffd700;
-            object-fit: cover;
-            box-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
-            margin-bottom: 20px;
+        body {
+            background-color: var(--bg-dark);
+            background-image: 
+                linear-gradient(rgba(var(--line-rgb), 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(var(--line-rgb), 0.05) 1px, transparent 1px);
+            background-size: 50px 50px;
+            background-attachment: fixed;
+            margin: 0; padding: 0;
+            min-height: 100vh;
+            font-family: var(--font-main);
+            color: #eee;
+            overflow-x: hidden;
+            transition: all 0.3s;
         }
 
-        /* ตารางเลือกรูป */
-        .avatar-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-            gap: 15px;
-            margin-top: 20px;
-            padding: 15px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 8px;
-            max-height: 300px;
-            overflow-y: auto;
+        .ambient-light {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle at 50% 0%, var(--theme-color) 0%, transparent 80%);
+            opacity: 0.1; pointer-events: none; z-index: -1;
+            transition: background 0.5s;
         }
 
-        .avatar-option {
-            width: 80px;
-            height: 80px;
-            border-radius: 10px;
-            cursor: pointer;
-            border: 2px solid transparent;
-            transition: transform 0.2s, border-color 0.2s;
-            object-fit: cover;
+        .container {
+            max-width: 950px; margin: 0 auto; padding-bottom: 80px;
+            animation: slideUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+            position: relative; z-index: 1;
+        }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* =========================================
+           2. HEADER & LAYOUT
+           ========================================= */
+        .profile-header {
+            position: relative;
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-bottom: 2px solid var(--cover-border-color);
+            border-radius: 0 0 24px 24px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+            margin-bottom: 30px; overflow: visible;
         }
 
-        .avatar-option:hover {
-            transform: scale(1.1);
-            border-color: #aaa;
+        .cover-image-container {
+            position: relative; width: 100%; height: 260px;
+            overflow: hidden; border-radius: 0 0 24px 24px;
+            background: #000;
+        }
+        .cover-image {
+            width: 100%; height: 100%; background-size: cover; background-position: center;
+            opacity: 1; transition: opacity 1s ease-in-out, transform 10s linear;
+        }
+        .cover-image.zoom-effect { transform: scale(1.1); }
+        .cover-image.fade-out { opacity: 0; }
+        .cover-overlay {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(to top, var(--card-bg) 0%, transparent 90%);
         }
 
-        /* สไตล์ตอนเลือกแล้ว */
-        .avatar-option.selected {
-            border-color: #00ff00;
-            box-shadow: 0 0 10px #00ff00;
-            transform: scale(1.1);
+        /* Profile Bar */
+        .profile-info-bar {
+            display: flex; align-items: flex-end; padding: 0 40px 30px 40px;
+            margin-top: -80px; position: relative; z-index: 10;
         }
 
-        input[type="text"], textarea {
-            width: 80%;
-            padding: 10px;
-            margin-top: 10px;
-            background: rgba(0, 0, 0, 0.5);
-            border: 1px solid #555;
-            color: white;
-            font-size: 1.1em;
-            border-radius: 5px;
+        /* Interactive Avatar Area */
+        .avatar-area { 
+            position: relative; margin-right: 25px; flex-shrink: 0; 
+            transition: transform 0.3s;
+        }
+        .avatar-area:hover { transform: scale(1.05); } /* Scale on hover */
+
+        .avatar-img {
+            width: 130px; height: 130px; object-fit: cover; background: #000;
+            border: 4px solid #1e1e24; 
+            box-shadow: 0 0 var(--glow-intensity) var(--avatar-border-color);
+            transition: 0.3s; position: relative; z-index: 2;
+        }
+
+        /* SHAPES (Expanded) */
+        .shape-circle { border-radius: 50%; }
+        .shape-square { border-radius: 12px; }
+        .shape-squircle { border-radius: 40%; }
+        .shape-hex { clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%); border: none !important; }
+        .shape-oct { clip-path: polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%); border: none !important; }
+        .shape-diamond { clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%); border: none !important; }
+        .shape-star { clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); border: none !important; }
+        .shape-pentagon { clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%); border: none !important; }
+        .shape-shield { clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%); border: none !important; border-radius: 0 0 50% 50%; }
+        .shape-message { border-radius: 50% 50% 0 50%; }
+        .shape-gear { clip-path: polygon(94% 49%, 85% 58%, 88% 70%, 76% 75%, 72% 87%, 60% 84%, 50% 94%, 40% 84%, 28% 87%, 24% 75%, 12% 70%, 15% 58%, 6% 49%, 15% 42%, 12% 30%, 24% 25%, 28% 13%, 40% 16%, 50% 6%, 60% 16%, 72% 13%, 76% 25%, 88% 30%, 85% 42%); border: none !important; }
+        .shape-flower { clip-path: polygon(50% 0%, 65% 20%, 90% 10%, 80% 35%, 100% 50%, 80% 65%, 90% 90%, 65% 80%, 50% 100%, 35% 80%, 10% 90%, 20% 65%, 0% 50%, 20% 35%, 10% 10%, 35% 20%); border: none !important; }
+
+        /* --- 50+ ANIMATIONS LIBRARY (Pure CSS) --- */
+        .avatar-anim-layer {
+            position: absolute; top: -12px; left: -12px; width: calc(100% + 24px); height: calc(100% + 24px);
+            border: 2px dashed var(--theme-color); border-radius: 50%;
+            pointer-events: none; opacity: 0.8; display: none; z-index: 1;
+            transition: all 0.3s;
         }
         
-        input[type="text"] {
-            text-align: center;
+        /* Interactive Hover: Spin faster / Glow brighter */
+        .avatar-area:hover .avatar-anim-layer { animation-duration: calc(var(--anim-speed) / 2); opacity: 1; filter: brightness(1.5); }
+
+        /* 1. Basic Rotation */
+        .anim-spin { animation: spin var(--anim-speed) linear infinite; display: block; border-style: dashed; }
+        .anim-spin-rev { animation: spinRev var(--anim-speed) linear infinite; display: block; border-style: dotted; }
+        .anim-spin-pulse { animation: spinPulse var(--anim-speed) linear infinite; display: block; border-style: double; }
+        .anim-step-spin { animation: stepSpin var(--anim-speed) steps(8) infinite; display: block; border-style: dashed; }
+        .anim-spin-3d { animation: spin3d var(--anim-speed) linear infinite; display: block; border-style: solid; }
+
+        /* 2. Scaling & Pulsing */
+        .anim-pulse { animation: pulse var(--anim-speed) infinite; display: block; border-style: solid; }
+        .anim-heartbeat { animation: heartbeat 1.5s ease-in-out infinite; display: block; border-style: solid; }
+        .anim-ping { animation: ping var(--anim-speed) cubic-bezier(0, 0, 0.2, 1) infinite; display: block; border-style: solid; opacity: 0.8; }
+        .anim-breathe { animation: breathe var(--anim-speed) ease-in-out infinite; display: block; border: none; box-shadow: 0 0 20px var(--theme-color); }
+        .anim-zoom { animation: zoomInOut var(--anim-speed) infinite; display: block; border-style: solid; }
+        .anim-shockwave { animation: shockwave var(--anim-speed) infinite; display: block; border: 2px solid var(--theme-color); }
+
+        /* 3. Colors & Lights */
+        .anim-rgb { border-color: red; animation: rgbLoop 3s infinite; display: block; border-style: solid; }
+        .anim-flash { animation: flashAnim 0.5s infinite; display: block; border-style: solid; }
+        .anim-neon-flicker { animation: neonFlicker 2s infinite; display: block; border: 2px solid var(--theme-color); box-shadow: 0 0 10px var(--theme-color); }
+        .anim-border-fade { animation: borderFade var(--anim-speed) infinite; display: block; border-style: solid; }
+        .anim-rainbow-border { animation: rainbowBorder 3s linear infinite; display: block; border: 4px solid red; }
+
+        /* 4. Movements */
+        .anim-float { animation: floatAnim var(--anim-speed) ease-in-out infinite; display: block; border: none; }
+        .anim-shake { animation: shakeAnim 0.5s ease-in-out infinite; display: block; border-style: solid; }
+        .anim-wobble { animation: wobbleAnim var(--anim-speed) ease-in-out infinite; display: block; border: none; }
+        .anim-jelly { animation: jellyAnim var(--anim-speed) infinite; display: block; border: none; }
+        .anim-bounce { animation: bounceAnim 1s infinite; display: block; border: none; }
+        .anim-swing { animation: swingAnim 2s ease-in-out infinite; display: block; border-style: solid; transform-origin: top center; }
+        .anim-slide { animation: slideAnim 3s ease-in-out infinite; display: block; border: none; }
+        .anim-orbit { animation: orbitAnim var(--anim-speed) linear infinite; display: block; border-width: 4px; border-style: solid; border-color: var(--theme-color) transparent transparent transparent; }
+
+        /* 5. Transforms & Distortions */
+        .anim-warp { animation: warpAnim var(--anim-speed) infinite; display: block; border-style: double; }
+        .anim-flip-x { animation: flipX var(--anim-speed) infinite; display: block; border-style: solid; }
+        .anim-flip-y { animation: flipY var(--anim-speed) infinite; display: block; border-style: solid; }
+        .anim-skew { animation: skewAnim var(--anim-speed) infinite; display: block; border-style: solid; }
+        .anim-rubberband { animation: rubberBand 1s infinite; display: block; border-style: solid; }
+        .anim-tada { animation: tada 1s infinite; display: block; border-style: dashed; }
+        .anim-liquid { animation: liquidAnim 3s infinite linear; display: block; border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%; border: 3px solid var(--theme-color); }
+
+        /* 6. Special FX */
+        .anim-scan { animation: scanAnim 2s linear infinite; display: block; border: none; background: linear-gradient(to bottom, transparent, var(--theme-color), transparent); opacity: 0.3; }
+        .anim-ghost { animation: ghostAnim 2s infinite; display: block; border-style: solid; }
+        .anim-glitch-border { animation: glitchBorder 1s infinite; display: block; border-style: solid; clip-path: inset(0 0 0 0); }
+        .anim-radar { animation: radarSpin 2s linear infinite; display: block; border-top: 2px solid var(--theme-color); border-right: 2px solid transparent; border-radius: 50%; }
+        .anim-solar { animation: solarAnim var(--anim-speed) linear infinite; display: block; border: 1px dotted var(--theme-color); }
+        .anim-clock { animation: clockAnim 4s steps(12) infinite; display: block; border-style: dashed; }
+        .anim-vibrate { animation: vibrateAnim 0.3s linear infinite; display: block; border-style: solid; }
+        .anim-morph { animation: morphAnim 5s ease-in-out infinite; display: block; border: 3px solid var(--theme-color); border-radius: 50%; }
+
+        /* --- Keyframes (The Magic) --- */
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        @keyframes spinRev { 100% { transform: rotate(-360deg); } }
+        @keyframes stepSpin { 100% { transform: rotate(360deg); } }
+        @keyframes spinPulse { 0% { transform: rotate(0) scale(1); } 50% { transform: rotate(180deg) scale(1.1); } 100% { transform: rotate(360deg) scale(1); } }
+        @keyframes spin3d { 0% { transform: rotateY(0); } 100% { transform: rotateY(360deg); } }
+        
+        @keyframes pulse { 0% { transform: scale(0.95); opacity:0.8; } 50% { transform: scale(1.1); opacity: 1; } 100% { transform: scale(0.95); opacity:0.8; } }
+        @keyframes heartbeat { 0% { transform: scale(1); } 14% { transform: scale(1.1); } 28% { transform: scale(1); } 42% { transform: scale(1.1); } 70% { transform: scale(1); } }
+        @keyframes ping { 75%, 100% { transform: scale(1.5); opacity: 0; } }
+        @keyframes breathe { 0%, 100% { box-shadow: 0 0 10px var(--theme-color); } 50% { box-shadow: 0 0 40px var(--theme-color); } }
+        @keyframes zoomInOut { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.2); } }
+        @keyframes shockwave { 0% { transform: scale(1); box-shadow: 0 0 0 0 var(--theme-color); opacity: 1; } 70% { transform: scale(1); box-shadow: 0 0 0 20px transparent; opacity: 0; } 100% { opacity: 0; } }
+        
+        @keyframes rgbLoop { 0% {border-color:red; box-shadow:0 0 10px red;} 33% {border-color:green; box-shadow:0 0 10px green;} 66% {border-color:blue; box-shadow:0 0 10px blue;} 100% {border-color:red; box-shadow:0 0 10px red;} }
+        @keyframes flashAnim { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+        @keyframes neonFlicker { 0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% { opacity: 1; box-shadow: 0 0 10px var(--theme-color); } 20%, 24%, 55% { opacity: 0.5; box-shadow: none; } }
+        @keyframes borderFade { 0%, 100% { border-color: transparent; } 50% { border-color: var(--theme-color); } }
+        @keyframes rainbowBorder { 0% {border-color: red;} 20% {border-color: orange;} 40% {border-color: yellow;} 60% {border-color: green;} 80% {border-color: blue;} 100% {border-color: violet;} }
+
+        @keyframes floatAnim { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-15px); } }
+        @keyframes shakeAnim { 0% { transform: translateX(0); } 25% { transform: translateX(-3px) rotate(-2deg); } 75% { transform: translateX(3px) rotate(2deg); } 100% { transform: translateX(0); } }
+        @keyframes wobbleAnim { 0%, 100% { transform: translateX(0%); } 15% { transform: translateX(-15%) rotate(-5deg); } 30% { transform: translateX(10%) rotate(3deg); } 45% { transform: translateX(-10%) rotate(-3deg); } 60% { transform: translateX(5%) rotate(2deg); } 75% { transform: translateX(-5%) rotate(-1deg); } }
+        @keyframes jellyAnim { 0%, 100% { transform: scale(1, 1); } 25% { transform: scale(0.9, 1.1); } 50% { transform: scale(1.1, 0.9); } 75% { transform: scale(0.95, 1.05); } }
+        @keyframes bounceAnim { 0%, 20%, 50%, 80%, 100% {transform: translateY(0);} 40% {transform: translateY(-20px);} 60% {transform: translateY(-10px);} }
+        @keyframes swingAnim { 20% { transform: rotate(15deg); } 40% { transform: rotate(-10deg); } 60% { transform: rotate(5deg); } 80% { transform: rotate(-5deg); } 100% { transform: rotate(0deg); } }
+        @keyframes slideAnim { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(20px); } }
+        @keyframes orbitAnim { 0% { transform: rotate(0deg) translateX(10px) rotate(0deg); } 100% { transform: rotate(360deg) translateX(10px) rotate(-360deg); } }
+
+        @keyframes warpAnim { 0% { border-radius: 50%; } 50% { border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%; transform: rotate(180deg); } 100% { border-radius: 50%; transform: rotate(360deg); } }
+        @keyframes flipX { 0% { transform: perspective(400px) rotateX(0); } 100% { transform: perspective(400px) rotateX(360deg); } }
+        @keyframes flipY { 0% { transform: perspective(400px) rotateY(0); } 100% { transform: perspective(400px) rotateY(360deg); } }
+        @keyframes skewAnim { 0%, 100% { transform: skew(0deg); } 50% { transform: skew(20deg); } }
+        @keyframes rubberBand { 0% {transform: scale3d(1, 1, 1);} 30% {transform: scale3d(1.25, 0.75, 1);} 40% {transform: scale3d(0.75, 1.25, 1);} 50% {transform: scale3d(1.15, 0.85, 1);} 65% {transform: scale3d(0.95, 1.05, 1);} 75% {transform: scale3d(1.05, 0.95, 1);} 100% {transform: scale3d(1, 1, 1);} }
+        @keyframes tada { 0% {transform: scale3d(1, 1, 1);} 10%, 20% {transform: scale3d(0.9, 0.9, 0.9) rotate3d(0, 0, 1, -3deg);} 30%, 50%, 70%, 90% {transform: scale3d(1.1, 1.1, 1.1) rotate3d(0, 0, 1, 3deg);} 40%, 60%, 80% {transform: scale3d(1.1, 1.1, 1.1) rotate3d(0, 0, 1, -3deg);} 100% {transform: scale3d(1, 1, 1);} }
+        @keyframes liquidAnim { 0% {border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;} 33% {border-radius: 70% 30% 50% 50% / 30% 30% 70% 70%;} 66% {border-radius: 50% 50% 20% 80% / 25% 80% 20% 75%;} 100% {border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;} }
+
+        @keyframes scanAnim { 0% { top: -100%; } 100% { top: 100%; } }
+        @keyframes ghostAnim { 0% { opacity: 0.8; transform: scale(1); } 100% { opacity: 0; transform: scale(1.5); } }
+        @keyframes glitchBorder { 0% { clip-path: inset(0 0 0 0); } 5% { clip-path: inset(10% 0 80% 0); } 10% { clip-path: inset(0 0 0 0); } 15% { clip-path: inset(80% 0 5% 0); } 20% { clip-path: inset(0 0 0 0); } 100% { clip-path: inset(0 0 0 0); } }
+        @keyframes radarSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes solarAnim { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes clockAnim { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes vibrateAnim { 0% { transform: translate(0); } 20% { transform: translate(-2px, 2px); } 40% { transform: translate(-2px, -2px); } 60% { transform: translate(2px, 2px); } 80% { transform: translate(2px, -2px); } 100% { transform: translate(0); } }
+        @keyframes morphAnim { 0% { border-radius: 50%; } 50% { border-radius: 0; transform: rotate(45deg); } 100% { border-radius: 50%; transform: rotate(90deg); } }
+
+        .user-details { flex: 1; padding-bottom: 10px; display: flex; flex-direction: column; justify-content: flex-end; }
+        .name-row { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; }
+        .display-name { font-size: 2.8em; font-weight: 800; margin: 0; color: #fff; line-height: 1; text-shadow: 0 0 15px var(--theme-color); transition: 0.3s; }
+        .role-badge { font-family: var(--font-tech); font-size: 0.9em; padding: 4px 12px; text-transform: uppercase; font-weight: 700; letter-spacing: 2px; display: inline-block; vertical-align: middle; }
+        
+        /* Badge Styles */
+        .badge-solid { background: var(--theme-color); color: #000; border-radius: 4px; }
+        .badge-outline { border: 2px solid var(--theme-color); color: var(--theme-color); background: rgba(0,0,0,0.5); border-radius: 4px; }
+        .badge-neon { color: #fff; text-shadow: 0 0 8px var(--theme-color); background: rgba(0,0,0,0.3); border-left: 3px solid var(--theme-color); padding-left: 10px; }
+        .badge-glass { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(5px); border: 1px solid rgba(255, 255, 255, 0.2); color: var(--theme-color); border-radius: 20px; }
+        .badge-pixel { font-family: monospace; border: 2px dashed var(--theme-color); background: #000; color: var(--theme-color); letter-spacing: 0; }
+        .badge-minimal { background: transparent; color: var(--theme-color); border-bottom: 2px solid var(--theme-color); border-radius: 0; padding: 0; }
+
+        .user-handle { color: #aaa; font-family: monospace; font-size: 1.1em; margin-top: 5px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+        .user-handle:hover { color: var(--theme-color); }
+        .action-buttons { padding-bottom: 15px; }
+        .btn { padding: 10px 25px; border-radius: 8px; border: none; font-family: 'Prompt', sans-serif; font-weight: 600; font-size: 1em; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 8px; text-transform: uppercase; }
+        .btn-back { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #ccc; }
+        .btn-back:hover { background: rgba(255,255,255,0.2); color: #fff; border-color: #fff; }
+
+        /* UI Structure */
+        .content-grid { display: grid; grid-template-columns: 320px 1fr; gap: 25px; padding: 0 25px; }
+        .glass-card { background: rgba(30, 30, 36, 0.6); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 16px; padding: 25px; margin-bottom: 25px; transition: all 0.3s ease; position: relative; }
+        .glass-card:hover { border-color: var(--card-border-color); box-shadow: 0 5px 30px rgba(0,0,0,0.5), inset 0 0 0 1px var(--card-border-color); }
+        .card-header { font-size: 0.9em; font-weight: 700; color: var(--theme-color); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 15px; border-bottom: 1px dashed rgba(255,255,255,0.1); padding-bottom: 10px; }
+        .tabs-bar { display: flex; gap: 20px; border-bottom: 2px solid rgba(255,255,255,0.05); margin-bottom: 25px; }
+        .tab-item { padding: 15px 10px; color: #777; cursor: pointer; font-weight: 600; font-size: 1.1em; position: relative; transition: 0.3s; }
+        .tab-item:hover { color: #fff; }
+        .tab-item.active { color: var(--theme-color); }
+        .tab-item.active::after { content: ''; position: absolute; bottom: -2px; left: 0; width: 100%; height: 3px; background: var(--theme-color); box-shadow: 0 -2px 10px var(--theme-color); }
+        .tab-pane { display: none; opacity: 0; animation: fadeUp 0.3s forwards; }
+        .tab-pane.active { display: block; }
+        @keyframes fadeUp { to { opacity: 1; transform: translateY(0); } }
+
+        /* Settings UI */
+        .settings-accordion { display: flex; flex-direction: column; gap: 15px; }
+        .accordion-item { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; overflow: hidden; }
+        .accordion-header { padding: 15px 20px; background: rgba(255,255,255,0.03); cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: #ddd; transition: 0.2s; }
+        .accordion-header:hover { background: rgba(255,255,255,0.08); color: var(--theme-color); }
+        .accordion-content { padding: 0 20px; max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out; background: rgba(0,0,0,0.4); }
+        .accordion-item.open .accordion-content { padding: 20px; max-height: 2000px; border-top: 1px solid rgba(255,255,255,0.1); }
+        .accordion-item.open .accordion-header { color: var(--theme-color); border-left: 4px solid var(--theme-color); }
+
+        .control-group { margin-bottom: 20px; }
+        .control-label { display: block; color: #aaa; margin-bottom: 10px; font-size: 0.9em; }
+        .swatch-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+        .swatch { width: 35px; height: 35px; border-radius: 8px; cursor: pointer; border: 2px solid rgba(255,255,255,0.1); transition: 0.2s; position: relative; }
+        .swatch:hover { transform: scale(1.1); border-color: #fff; }
+        .swatch.active { border-color: #fff; transform: scale(1.15); box-shadow: 0 0 10px currentColor; }
+        .swatch.locked { opacity: 0.2; cursor: not-allowed; filter: grayscale(1); }
+        .swatch.locked::after { content: '🔒'; position: absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:12px; }
+        input[type=range] { width: 100%; cursor: pointer; accent-color: var(--theme-color); }
+        .form-control { width: 100%; padding: 12px; background: #0f0f13; border: 1px solid #333; border-radius: 8px; color: #fff; font-family: 'Prompt', sans-serif; box-sizing: border-box; }
+        .form-control:focus { border-color: var(--theme-color); outline: none; }
+        .avatar-selection { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 10px; }
+        .ava-choice { width: 60px; height: 60px; border-radius: 10px; cursor: pointer; border: 2px solid transparent; flex-shrink: 0; transition: 0.2s; opacity: 0.6; }
+        .ava-choice.selected { border-color: var(--theme-color); opacity: 1; transform: scale(1.1); }
+        .btn-save { width: 100%; padding: 15px; background: var(--theme-color); border: none; border-radius: 10px; color: #000; font-weight: bold; font-size: 1.1em; cursor: pointer; margin-top: 20px; box-shadow: 0 0 20px rgba(0,0,0,0.5); transition: 0.2s; }
+        .btn-save:hover { filter: brightness(1.2); transform: scale(1.02); }
+        
+        .friend-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
+        .friend-card { background: rgba(255,255,255,0.03); border-radius: 10px; padding: 10px; text-align: center; border: 1px solid rgba(255,255,255,0.05); transition: 0.2s; cursor: pointer; }
+        .friend-card:hover { transform: translateY(-3px); border-color: #00ff88; }
+        .f-img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; margin-bottom: 5px; }
+        .f-name { font-size: 0.8em; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; }
+        .f-stat { font-size: 0.6em; color: #00ff88; }
+        .admin-box { background: rgba(255, 71, 87, 0.05); border: 1px dashed #ff4757; border-radius: 10px; padding: 15px; margin-top: 20px; display: none; }
+        .role-btn { flex: 1; padding: 6px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; opacity: 0.8; margin-right: 5px; }
+
+        @media (max-width: 900px) {
+            .content-grid { grid-template-columns: 1fr; }
+            .profile-info-bar { flex-direction: column; align-items: center; text-align: center; margin-top: -60px; }
+            .avatar-area { margin-right: 0; margin-bottom: 15px; }
+            .name-row { justify-content: center; }
+            .action-buttons { justify-content: center; width: 100%; }
         }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #050508; }
+        ::-webkit-scrollbar-thumb { background: var(--theme-color); border-radius: 3px; }
     </style>
 </head>
 <body>
 
-    <div class="profile-container">
-        <h1>👤 แก้ไขโปรไฟล์</h1>
-        
-        <img id="currentAvatarDisplay" src="https://via.placeholder.com/150" class="current-avatar">
-        
-        <div>
-            <label style="color:#aaa;">ชื่อที่ใช้แสดง:</label><br>
-            <input type="text" id="displayNameInput" placeholder="ตั้งชื่อเท่ๆ ของคุณ">
+    <div class="ambient-light"></div>
+
+    <div class="container">
+        <div class="profile-header">
+            <div class="cover-image-container">
+                <div class="cover-image" id="coverDisplay"></div>
+                <div class="cover-overlay"></div>
+            </div>
+            
+            <div class="profile-info-bar">
+                <div class="avatar-area">
+                    <div class="avatar-anim-layer" id="avatarAnimLayer"></div>
+                    <img id="displayAvatar" src="https://via.placeholder.com/150" class="avatar-img shape-circle">
+                </div>
+                
+                <div class="user-details">
+                    <div class="name-row">
+                        <h1 class="display-name" id="displayName">Loading...</h1>
+                        <span id="roleBadge" class="role-badge badge-solid">...</span>
+                    </div>
+                    <div class="user-handle" onclick="copyUID()" title="คัดลอก UID">
+                        ID: <span id="displayUID" style="font-family: monospace;">...</span> 📑
+                    </div>
+                </div>
+                
+                <div class="action-buttons">
+                    <button onclick="handleBack()" class="btn btn-back">🔙 ย้อนกลับ</button>
+                </div>
+            </div>
         </div>
 
-        <div style="margin-top: 20px;">
-            <label style="display:block; color:#aaa;">คำคม / Bio:</label>
-            <textarea id="bioInput" rows="3" placeholder="เขียนข้อความแนะนำตัว..."></textarea>
-        </div>
+        <div class="content-grid">
+            <div class="left-col">
+                <div class="glass-card">
+                    <div class="card-header">เกี่ยวกับฉัน</div>
+                    <div id="displayBio" style="font-style:italic; color:#ccc; line-height:1.6;">...</div>
+                </div>
 
-        <hr style="border-color: #444; margin: 20px 0;">
+                <div class="glass-card">
+                    <div class="card-header">ข้อมูลสถิติ</div>
+                    <div class="stat-row"><span class="stat-label">เข้าร่วม</span> <span id="joinDate" class="stat-val">-</span></div>
+                    <div class="stat-row"><span class="stat-label">อีเมล</span> <span id="displayEmail" class="stat-val" style="font-size:0.9em">-</span></div>
+                    <div class="stat-row"><span class="stat-label">เลเวล</span> <span class="stat-val" style="color:var(--theme-color)">1</span></div>
+                </div>
 
-        <h3 style="color:#ffc107;">เลือกรูปประจำตัว</h3>
-        <div class="avatar-grid" id="avatarGrid">
+                <div id="adminPanel" class="admin-box">
+                    <div style="color:#ff4757; font-weight:bold; margin-bottom:10px;">⚡ ADMIN CONTROLS</div>
+                    <div style="display:flex;">
+                        <button onclick="updateUserRole('user')" class="role-btn" style="background:#555; color:white;">User</button>
+                        <button onclick="updateUserRole('beta_tester')" class="role-btn" style="background:#3742fa; color:white;">Tester</button>
+                        <button onclick="updateUserRole('admin')" class="role-btn" style="background:#ff4757; color:white;">Admin</button>
+                    </div>
+                </div>
             </div>
 
-        <div style="margin-top: 30px; display: flex; gap: 10px; justify-content: center;">
-            <button onclick="saveProfile()" style="background: linear-gradient(90deg, #28a745, #1e7e34); color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">💾 บันทึกข้อมูล</button>
-            <button onclick="window.location.href='lobby.html'" style="background: #555; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">ย้อนกลับ</button>
+            <div class="right-col">
+                <div class="tabs-bar">
+                    <div class="tab-item active" onclick="openTab('friends')" id="tabBtnFriends">รายชื่อเพื่อน</div>
+                    <div class="tab-item" onclick="openTab('settings')" id="tabBtnSettings" style="display:none;">ตั้งค่าโปรไฟล์</div>
+                </div>
+
+                <div id="tab-friends" class="tab-pane active">
+                    <div id="friendsGrid" class="friend-grid">
+                        <p style="color:#666; text-align:center; grid-column:1/-1;">กำลังโหลด...</p>
+                    </div>
+                </div>
+
+                <div id="tab-settings" class="tab-pane">
+                    <div class="settings-accordion">
+                        
+                        <div class="accordion-item open">
+                            <div class="accordion-header" onclick="toggleAccordion(this)">👤 ข้อมูลส่วนตัว <span>▼</span></div>
+                            <div class="accordion-content">
+                                <div class="control-group">
+                                    <span class="control-label">ชื่อที่ใช้แสดง</span>
+                                    <input type="text" id="editNameInput" class="form-control">
+                                </div>
+                                <div class="control-group">
+                                    <span class="control-label">คำคม / ไบโอ</span>
+                                    <textarea id="editBioInput" rows="2" class="form-control"></textarea>
+                                </div>
+                                <div class="control-group">
+                                    <span class="control-label">เลือกรูปประจำตัว</span>
+                                    <div class="avatar-selection" id="avatarGrid"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <div class="accordion-header" onclick="toggleAccordion(this)">🎨 ธีมสี & นีออน (Colors) <span>▼</span></div>
+                            <div class="accordion-content">
+                                <div class="control-group"><span class="control-label">สีหลัก (Theme Accent)</span><div class="swatch-grid" id="swatch-theme"></div></div>
+                                <div class="control-group"><span class="control-label">แสงรอบรูป (Avatar Glow)</span><div class="swatch-grid" id="swatch-avatar"></div></div>
+                                <div class="control-group"><span class="control-label">ขอบการ์ด (Borders)</span><div class="swatch-grid" id="swatch-card"></div></div>
+                                <div class="control-group"><span class="control-label">เส้น Grid พื้นหลัง</span><div class="swatch-grid" id="swatch-line"></div></div>
+                                <div class="control-group"><span class="control-label">ขอบรูปปก (Cover)</span><div class="swatch-grid" id="swatch-cover"></div></div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <div class="accordion-header" onclick="toggleAccordion(this)">🖼️ รูปทรง & สไตล์ <span>▼</span></div>
+                            <div class="accordion-content">
+                                <div class="control-group">
+                                    <span class="control-label">รูปทรง Avatar (20+ แบบ)</span>
+                                    <select id="selAvatarShape" class="form-control" onchange="updatePreview()">
+                                        <option value="shape-circle">วงกลม (Circle)</option>
+                                        <option value="shape-square">สี่เหลี่ยม (Square)</option>
+                                        <option value="shape-rounded">สี่เหลี่ยมมน (Rounded)</option>
+                                        <option value="shape-squircle">สเควอร์เคิล (Squircle)</option>
+                                        <option value="shape-hex">หกเหลี่ยม (Hexagon)</option>
+                                        <option value="shape-oct">แปดเหลี่ยม (Octagon)</option>
+                                        <option value="shape-diamond">ข้าวหลามตัด (Diamond)</option>
+                                        <option value="shape-star">ดาว (Star)</option>
+                                        <option value="shape-pentagon">ห้าเหลี่ยม (Pentagon)</option>
+                                        <option value="shape-shield">โล่ (Shield)</option>
+                                        <option value="shape-leaf">ใบไม้ (Leaf)</option>
+                                        <option value="shape-message">กล่องข้อความ (Message)</option>
+                                        <option value="shape-gear">ฟันเฟือง (Gear)</option>
+                                        <option value="shape-flower">ดอกไม้ (Flower)</option>
+                                        <option value="shape-cross">กากบาท (Cross)</option>
+                                        <option value="shape-parallelogram">สี่เหลี่ยมด้านขนาน (Parallelogram)</option>
+                                        <option value="shape-trapezoid">คางหมู (Trapezoid)</option>
+                                    </select>
+                                </div>
+                                <div class="control-group">
+                                    <span class="control-label">สไตล์ป้ายยศ</span>
+                                    <select id="selBadgeStyle" class="form-control" onchange="updatePreview()">
+                                        <option value="badge-solid">ทึบ (Solid)</option>
+                                        <option value="badge-outline">เส้นขอบ (Outline)</option>
+                                        <option value="badge-neon">นีออน (Neon Text)</option>
+                                        <option value="badge-glass">กระจก (Glass)</option>
+                                        <option value="badge-pixel">พิกเซล (Pixel)</option>
+                                        <option value="badge-minimal">มินิมอล (Minimal)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <div class="accordion-header" onclick="toggleAccordion(this)">✨ อนิเมชั่น (Motion) <span>▼</span></div>
+                            <div class="accordion-content">
+                                <div class="control-group">
+                                    <span class="control-label">อนิเมชั่นรอบรูป (30+ แบบ)</span>
+                                    <select id="selAnimType" class="form-control" onchange="updatePreview()">
+                                        <option value="none">ไม่มี (None)</option>
+                                        <option value="anim-spin">หมุนวน (Spin)</option>
+                                        <option value="anim-spin-rev">หมุนกลับ (Spin Reverse)</option>
+                                        <option value="anim-spin-3d">หมุน 3D (3D Spin)</option>
+                                        <option value="anim-spin-pulse">หมุนและขยาย (Spin Pulse)</option>
+                                        <option value="anim-step-spin">หมุนเป็นจังหวะ (Step Spin)</option>
+                                        <option value="anim-radar">เรดาร์ (Radar)</option>
+                                        <option value="anim-clock">นาฬิกา (Clock)</option>
+                                        <option value="anim-orbit">วงโคจร (Orbit)</option>
+                                        <option value="anim-pulse">จังหวะหัวใจ (Pulse)</option>
+                                        <option value="anim-heartbeat">หัวใจเต้นเร็ว (Heartbeat)</option>
+                                        <option value="anim-ping">คลื่นสัญญาณ (Ping)</option>
+                                        <option value="anim-breathe">หายใจ (Breathe)</option>
+                                        <option value="anim-zoom">ซูมเข้าออก (Zoom)</option>
+                                        <option value="anim-shockwave">คลื่นกระแทก (Shockwave)</option>
+                                        <option value="anim-rgb">ไฟ RGB (Loop)</option>
+                                        <option value="anim-flash">กระพริบ (Flash)</option>
+                                        <option value="anim-neon-flicker">นีออนติดดับ (Neon Flicker)</option>
+                                        <option value="anim-border-fade">ขอบจางหาย (Border Fade)</option>
+                                        <option value="anim-rainbow-border">ขอบรุ้ง (Rainbow)</option>
+                                        <option value="anim-float">ลอยตัว (Float)</option>
+                                        <option value="anim-shake">สั่น (Shake)</option>
+                                        <option value="anim-wobble">ดุ๊กดิ๊ก (Wobble)</option>
+                                        <option value="anim-jelly">เยลลี่ (Jelly)</option>
+                                        <option value="anim-bounce">เด้งดึ๋ง (Bounce)</option>
+                                        <option value="anim-swing">แกว่ง (Swing)</option>
+                                        <option value="anim-slide">สไลด์ไปมา (Slide)</option>
+                                        <option value="anim-vibrate">สั่นแรง (Vibrate)</option>
+                                        <option value="anim-warp">วาร์ป (Warp)</option>
+                                        <option value="anim-flip-x">พลิกแนวนอน (Flip X)</option>
+                                        <option value="anim-flip-y">พลิกแนวตั้ง (Flip Y)</option>
+                                        <option value="anim-skew">บิดเบี้ยว (Skew)</option>
+                                        <option value="anim-rubberband">ยางยืด (RubberBand)</option>
+                                        <option value="anim-tada">ทาด้า! (Tada)</option>
+                                        <option value="anim-liquid">ของเหลว (Liquid)</option>
+                                        <option value="anim-morph">เปลี่ยนรูป (Morph)</option>
+                                        <option value="anim-scan">สแกน (Scan)</option>
+                                        <option value="anim-ghost">วิญญาณ (Ghost)</option>
+                                        <option value="anim-glitch-border">กลิทช์ขอบ (Glitch Border)</option>
+                                        <option value="anim-solar">สุริยะ (Solar)</option>
+                                    </select>
+                                </div>
+                                <div class="control-group">
+                                    <span class="control-label">ความเร็ว: <span id="lblSpeed">2s</span></span>
+                                    <input type="range" id="rngSpeed" min="0.5" max="5" step="0.5" value="2" oninput="updatePreview()">
+                                </div>
+                                <div class="control-group">
+                                    <span class="control-label">ความแรงแสงนีออน: <span id="lblGlow">10px</span></span>
+                                    <input type="range" id="rngGlow" min="0" max="50" step="1" value="10" oninput="updatePreview()">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <div class="accordion-header" onclick="toggleAccordion(this)">🌌 ภาพปก (Cover) <span>▼</span></div>
+                            <div class="accordion-content">
+                                <div class="control-group">
+                                    <span class="control-label">โหมดภาพปก</span>
+                                    <select id="selCoverMode" class="form-control" onchange="updateCoverSettings()">
+                                        <option value="slideshow">สไลด์โชว์ (เปลี่ยนทุก 8 วิ)</option>
+                                        <option value="locked">ล็อคภาพปัจจุบัน</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div> <button onclick="saveProfile()" class="btn-save">💾 บันทึกการตั้งค่าทั้งหมด</button>
+                </div>
+            </div>
         </div>
     </div>
 
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    
     <script src="Javascript/firebase-init.js"></script>
     <script src="Javascript/ui-helpers.js"></script>
 
     <script>
-        // -------------------------------------------------------------
-        // 1. ตั้งค่ารายการรูปภาพ
-        // -------------------------------------------------------------
+        // --- CONFIG & ASSETS ---
         const availableAvatars = [
-            "Profile/Profile_1.jpg",
-            "Profile/Profile_2.jpg",
-            "Profile/Profile_3.jpg",
-            "Profile/Profile_4.jpg",
-            "Profile/Profile_5.jpg",
+            "Profile/Profile_1.jpg", "Profile/Profile_2.jpg", "Profile/Profile_3.jpg",
+            "Profile/Profile_4.jpg", "Profile/Profile_5.jpg", 
+            "https://cdn-icons-png.flaticon.com/512/4333/4333609.png", 
+            "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
         ];
 
-        let selectedAvatarUrl = ""; // ตัวแปรเก็บรูปล่าสุดที่เลือก
+        const coverImages = [
+            'https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=1000&auto=format&fit=crop', // Sci-Fi
+            'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1000&auto=format&fit=crop', // Fantasy
+            'https://images.unsplash.com/photo-1534796636912-3b95b3ab5980?q=80&w=1000&auto=format&fit=crop', // Nebula
+            'https://images.unsplash.com/photo-1614728853913-1e221a613233?q=80&w=1000&auto=format&fit=crop'  // Magic
+        ];
 
-        // -------------------------------------------------------------
-        // 2. โหลดข้อมูลเมื่อเปิดหน้าเว็บ
-        // -------------------------------------------------------------
+        const colorPalette = [
+            { hex: '#ffffff', name: 'White', roleReq: 0 },
+            { hex: '#bdc3c7', name: 'Silver', roleReq: 0 },
+            { hex: '#2ecc71', name: 'Green', roleReq: 0 },
+            { hex: '#f1c40f', name: 'Yellow', roleReq: 0 },
+            { hex: '#e67e22', name: 'Orange', roleReq: 0 },
+            { hex: '#9b59b6', name: 'Purple', roleReq: 0 },
+            { hex: '#ff9ff3', name: 'Pink', roleReq: 0 },
+            { hex: '#1abc9c', name: 'Teal', roleReq: 0 },
+            { hex: '#34495e', name: 'Dark Blue', roleReq: 0 },
+            { hex: '#7f8c8d', name: 'Grey', roleReq: 0 },
+            // Tier 2 (Tester)
+            { hex: '#3742fa', name: 'Neon Blue', roleReq: 1 },
+            { hex: '#00d2ff', name: 'Cyan', roleReq: 1 },
+            { hex: '#70a1ff', name: 'Sky', roleReq: 1 },
+            { hex: '#5f27cd', name: 'Violet', roleReq: 1 },
+            // Tier 3 (Admin)
+            { hex: '#ff4757', name: 'Red', roleReq: 2 },
+            { hex: '#ff0000', name: 'Crimson', roleReq: 2 },
+            { hex: '#ff6b81', name: 'Rose', roleReq: 2 },
+            { hex: '#ff7f50', name: 'Coral', roleReq: 2 }
+        ];
+
+        const roleLevels = { 'user': 0, 'beta_tester': 1, 'admin': 2 };
+
+        let currentUser = null;
+        let targetUid = null;
+        let currentRoleLevel = 0;
+        let selectedAvatarUrl = "";
+        let prefs = {
+            colors: { theme:'#fff', avatar:'#fff', card:'#fff', line:'#fff', cover:'#fff' },
+            style: { avatarShape:'shape-circle', badgeStyle:'badge-solid' },
+            anim: { type:'none', speed:2, glow:10 },
+            cover: { mode:'slideshow' }
+        };
+        
+        let coverIndex = 0;
+        let coverInterval;
+
+        // --- INIT ---
         firebase.auth().onAuthStateChanged(user => {
             if (user) {
-                // ดึงข้อมูลเดิมมาโชว์
-                document.getElementById('displayNameInput').value = user.displayName || "";
-                const currentPhoto = user.photoURL || "https://via.placeholder.com/150";
-                document.getElementById('currentAvatarDisplay').src = currentPhoto;
-                selectedAvatarUrl = currentPhoto; // ตั้งค่าเริ่มต้น
+                currentUser = user;
+                const urlParams = new URLSearchParams(window.location.search);
+                targetUid = urlParams.get('uid') || currentUser.uid;
 
-                renderAvatarGrid();
+                loadUserData(targetUid);
+                loadFriendsList(targetUid);
+                startCoverSlideshow();
 
-                // โหลดข้อมูล Bio จาก Database
-                db.ref('users/' + user.uid).once('value').then(snapshot => {
-                    const data = snapshot.val();
-                    if (data && data.bio) {
-                        document.getElementById('bioInput').value = data.bio;
-                    }
-                });
+                if (targetUid === currentUser.uid) {
+                    renderAvatarSelector();
+                    document.getElementById('tabBtnSettings').style.display = 'block';
+                    if (urlParams.get('mode') === 'edit') setTimeout(() => openTab('settings'), 300);
+                } else {
+                    document.querySelector('.btn-back').innerHTML = "✖ Close";
+                }
             } else {
-                // ถ้าไม่ได้ล็อกอิน ให้ดีดกลับไปหน้า Login
                 window.location.href = 'login.html';
             }
         });
 
-        // -------------------------------------------------------------
-        // 3. ฟังก์ชันบันทึกข้อมูล (เหลือแค่อันเดียวที่ถูกต้องแล้ว!)
-        // -------------------------------------------------------------
-        async function saveProfile() {
-            const user = firebase.auth().currentUser;
-            const newName = document.getElementById('displayNameInput').value.trim();
-            const newBio = document.getElementById('bioInput').value.trim(); // รับค่าคำคม
+        // --- LOAD DATA ---
+        function loadUserData(uid) {
+            db.ref('users/' + uid).on('value', snapshot => {
+                const data = snapshot.val();
+                if (!data) return;
 
-            if (!newName) return Swal.fire('เตือน', 'กรุณาใส่ชื่อ', 'warning');
+                // Basic Info
+                document.getElementById('displayName').innerText = data.username || "Unknown";
+                document.getElementById('displayAvatar').src = data.photoURL || "https://via.placeholder.com/150";
+                document.getElementById('displayUID').innerText = uid;
+                document.getElementById('displayEmail').innerText = (uid === currentUser.uid) ? (data.email || "-") : "Hidden";
+                document.getElementById('displayBio').innerText = data.bio || "-";
+                document.getElementById('joinDate').innerText = data.createdAt ? new Date(data.createdAt).toLocaleDateString() : "-";
 
-            showLoading('กำลังบันทึก...');
+                // Role Logic & Defaults
+                const role = data.role || 'user';
+                const roleBadge = document.getElementById('roleBadge');
+                roleBadge.className = 'role-badge';
+                
+                if (role === 'admin') { 
+                    roleBadge.innerText = 'ADMIN'; roleBadge.classList.add('badge-admin'); 
+                } else if (role === 'beta_tester') { 
+                    roleBadge.innerText = 'TESTER'; roleBadge.classList.add('badge-tester'); 
+                } else { 
+                    roleBadge.innerText = 'USER'; roleBadge.classList.add('badge-user'); 
+                }
 
-            try {
-                // 1. อัปเดต Auth Profile (ชื่อและรูป)
-                await user.updateProfile({
-                    displayName: newName,
-                    photoURL: selectedAvatarUrl
-                });
+                // Default Colors Logic (Important!)
+                const defColor = (role === 'admin') ? '#ff4757' : (role === 'beta_tester' ? '#3742fa' : '#ffffff');
 
-                // 2. อัปเดต Database (รวม Bio ด้วย)
-                await db.ref('users/' + user.uid).update({
-                    username: newName,
-                    bio: newBio, // บันทึกคำคมลงฐานข้อมูล
-                    email: user.email,
-                    photoURL: selectedAvatarUrl,
-                    lastUpdated: firebase.database.ServerValue.TIMESTAMP
-                });
+                if (uid === currentUser.uid) {
+                    currentRoleLevel = roleLevels[role] || 0;
+                    document.getElementById('editNameInput').value = data.username || "";
+                    document.getElementById('editBioInput').value = data.bio || "";
+                    selectedAvatarUrl = data.photoURL;
 
-                hideLoading();
-                await Swal.fire('เรียบร้อย!', 'บันทึกโปรไฟล์สำเร็จ', 'success');
-                // window.location.replace('lobby.html'); // เปิดบรรทัดนี้ถ้าอยากให้เด้งกลับ Lobby ทันที
-            } catch (error) {
-                hideLoading();
-                console.error(error);
-                Swal.fire('ผิดพลาด', error.message, 'error');
+                    // Load prefs or set defaults
+                    if (data.profilePrefs) {
+                        prefs = data.profilePrefs;
+                    } else {
+                        prefs = { 
+                            colors: { theme:defColor, avatar:defColor, card:defColor, line:defColor, cover:defColor },
+                            style: { avatarShape:'shape-circle', badgeStyle:'badge-solid' },
+                            anim: { type:'none', speed:2, glow:10 },
+                            cover: { mode:'slideshow' }
+                        };
+                    }
+                    renderColorPickers();
+                    syncControlsToPrefs();
+                } else {
+                    // Visitor loading friend's profile
+                    if (data.profilePrefs) {
+                        prefs = data.profilePrefs;
+                    } else {
+                        prefs = { 
+                            colors: { theme:defColor, avatar:defColor, card:defColor, line:defColor, cover:defColor },
+                            style: { avatarShape:'shape-circle', badgeStyle:'badge-solid' },
+                            anim: { type:'none', speed:2, glow:10 },
+                            cover: { mode:'slideshow' }
+                        };
+                    }
+                }
+                
+                checkAdminAccess(role);
+                applyAllVisuals();
+            });
+        }
+
+        // --- VISUAL ENGINE ---
+        function applyAllVisuals() {
+            const root = document.documentElement;
+            // Colors
+            root.style.setProperty('--theme-color', prefs.colors.theme);
+            root.style.setProperty('--avatar-border-color', prefs.colors.avatar);
+            root.style.setProperty('--card-border-color', prefs.colors.card);
+            root.style.setProperty('--cover-border-color', prefs.colors.cover);
+            
+            // RGB Calc for transparency
+            const hexToRgb = hex => hex.match(/[a-f0-9]{2}/gi).map(x => parseInt(x, 16)).join(',');
+            try { root.style.setProperty('--line-rgb', hexToRgb(prefs.colors.line)); } catch(e) {}
+
+            // Styles & Shapes
+            document.getElementById('displayAvatar').className = `avatar-img ${prefs.style.avatarShape}`;
+            
+            const badge = document.getElementById('roleBadge');
+            badge.className = `role-badge ${prefs.style.badgeStyle}`;
+            if(prefs.style.badgeStyle === 'badge-solid') badge.style.background = prefs.colors.theme;
+            if(prefs.style.badgeStyle === 'badge-outline') { badge.style.borderColor = prefs.colors.theme; badge.style.color = prefs.colors.theme; badge.style.background = 'rgba(0,0,0,0.5)'; }
+            if(prefs.style.badgeStyle === 'badge-neon') { badge.style.textShadow = `0 0 5px ${prefs.colors.theme}`; badge.style.borderLeftColor = prefs.colors.theme; }
+            if(prefs.style.badgeStyle === 'badge-glass') { badge.style.color = prefs.colors.theme; badge.style.borderColor = prefs.colors.theme; }
+            if(prefs.style.badgeStyle === 'badge-pixel') { badge.style.color = prefs.colors.theme; badge.style.borderColor = prefs.colors.theme; }
+            if(prefs.style.badgeStyle === 'badge-minimal') { badge.style.color = prefs.colors.theme; badge.style.borderBottomColor = prefs.colors.theme; }
+
+            // Animations & Glow
+            root.style.setProperty('--anim-speed', prefs.anim.speed + 's');
+            root.style.setProperty('--glow-intensity', prefs.anim.glow + 'px');
+            
+            const animLayer = document.getElementById('avatarAnimLayer');
+            animLayer.className = 'avatar-anim-layer'; 
+            if (prefs.anim.type !== 'none') animLayer.classList.add(prefs.anim.type);
+
+            // Cover
+            handleCoverDisplay();
+        }
+
+        function handleCoverDisplay() {
+            const coverEl = document.getElementById('coverDisplay');
+            if (coverInterval) clearInterval(coverInterval);
+            if (prefs.cover.mode === 'locked') {
+                coverEl.style.backgroundImage = `url(${coverImages[0]})`; coverEl.style.opacity = 1;
+            } else {
+                startCoverSlideshow();
             }
         }
 
-        // -------------------------------------------------------------
-        // 4. สร้าง Grid รูปภาพให้เลือก
-        // -------------------------------------------------------------
-        function renderAvatarGrid() {
-            const grid = document.getElementById('avatarGrid');
-            grid.innerHTML = "";
+        function startCoverSlideshow() {
+            const coverEl = document.getElementById('coverDisplay');
+            coverEl.style.backgroundImage = `url(${coverImages[coverIndex]})`; coverEl.style.opacity = 1;
+            coverInterval = setInterval(() => {
+                coverEl.style.opacity = 0;
+                setTimeout(() => {
+                    coverIndex = (coverIndex + 1) % coverImages.length;
+                    coverEl.style.backgroundImage = `url(${coverImages[coverIndex]})`;
+                    coverEl.style.opacity = 1;
+                }, 1000);
+            }, 8000);
+        }
 
+        // --- CONTROLS UI ---
+        function renderColorPickers() {
+            const targets = ['theme', 'avatar', 'card', 'line', 'cover'];
+            targets.forEach(target => {
+                const container = document.getElementById(`swatch-${target}`);
+                container.innerHTML = '';
+                colorPalette.forEach(color => {
+                    const el = document.createElement('div');
+                    el.className = 'swatch';
+                    el.style.backgroundColor = color.hex;
+                    
+                    if (currentRoleLevel < color.roleReq) {
+                        el.classList.add('locked'); el.title = "ยศไม่ถึง";
+                    } else {
+                        el.onclick = () => {
+                            prefs.colors[target] = color.hex;
+                            applyAllVisuals();
+                            container.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+                            el.classList.add('active');
+                        };
+                    }
+                    if (prefs.colors[target] === color.hex) el.classList.add('active');
+                    container.appendChild(el);
+                });
+            });
+        }
+
+        function syncControlsToPrefs() {
+            document.getElementById('selAvatarShape').value = prefs.style.avatarShape || 'shape-circle';
+            document.getElementById('selBadgeStyle').value = prefs.style.badgeStyle || 'badge-solid';
+            document.getElementById('selAnimType').value = prefs.anim.type || 'none';
+            document.getElementById('rngSpeed').value = prefs.anim.speed || 2;
+            document.getElementById('rngGlow').value = prefs.anim.glow || 10;
+            document.getElementById('selCoverMode').value = prefs.cover.mode || 'slideshow';
+            
+            // Labels update
+            document.getElementById('lblSpeed').innerText = (prefs.anim.speed || 2) + 's';
+            document.getElementById('lblGlow').innerText = (prefs.anim.glow || 10) + 'px';
+        }
+
+        function updatePreview() {
+            prefs.style.avatarShape = document.getElementById('selAvatarShape').value;
+            prefs.style.badgeStyle = document.getElementById('selBadgeStyle').value;
+            prefs.anim.type = document.getElementById('selAnimType').value;
+            prefs.anim.speed = document.getElementById('rngSpeed').value;
+            prefs.anim.glow = document.getElementById('rngGlow').value;
+            
+            document.getElementById('lblSpeed').innerText = prefs.anim.speed + 's';
+            document.getElementById('lblGlow').innerText = prefs.anim.glow + 'px';
+            
+            applyAllVisuals();
+        }
+
+        function updateCoverSettings() {
+            prefs.cover.mode = document.getElementById('selCoverMode').value;
+            handleCoverDisplay();
+        }
+
+        function toggleAccordion(header) {
+            header.parentElement.classList.toggle('open');
+        }
+
+        async function saveProfile() {
+            const newName = document.getElementById('editNameInput').value.trim();
+            const newBio = document.getElementById('editBioInput').value.trim();
+            if (!newName) return Swal.fire('เตือน', 'กรุณาใส่ชื่อ', 'warning');
+
+            try {
+                await db.ref('users/' + currentUser.uid).update({
+                    username: newName, bio: newBio, photoURL: selectedAvatarUrl, profilePrefs: prefs
+                });
+                await currentUser.updateProfile({ displayName: newName, photoURL: selectedAvatarUrl });
+                Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ!', timer: 1000, showConfirmButton:false });
+            } catch (err) { Swal.fire('Error', err.message, 'error'); }
+        }
+
+        // --- UTILS ---
+        function renderAvatarSelector() {
+            const grid = document.getElementById('avatarGrid');
+            grid.innerHTML = '';
             availableAvatars.forEach(url => {
                 const img = document.createElement('img');
-                img.src = url;
-                img.className = "avatar-option";
-                
-                // ถ้า URL ตรงกับที่เลือกอยู่ ให้ใส่กรอบเขียว
+                img.src = url; img.className = 'ava-choice';
                 if (url === selectedAvatarUrl) img.classList.add('selected');
-
-                // กดแล้วเลือกรูปนี้
                 img.onclick = () => {
-                    // ลบคลาส selected จากรูปอื่น
-                    document.querySelectorAll('.avatar-option').forEach(el => el.classList.remove('selected'));
-                    // ใส่คลาส selected ให้รูปนี้
+                    document.querySelectorAll('.ava-choice').forEach(e => e.classList.remove('selected'));
                     img.classList.add('selected');
-                    // อัปเดตตัวแปรและรูปตัวอย่างด้านบน
                     selectedAvatarUrl = url;
-                    document.getElementById('currentAvatarDisplay').src = url;
                 };
-
                 grid.appendChild(img);
             });
+        }
+
+        function openTab(tabName) {
+            document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.tab-item').forEach(b => b.classList.remove('active'));
+            document.getElementById('tab-' + tabName).classList.add('active');
+            if (tabName === 'friends') document.getElementById('tabBtnFriends').classList.add('active');
+            if (tabName === 'settings') document.getElementById('tabBtnSettings').classList.add('active');
+        }
+
+        function handleBack() {
+            if (window.self !== window.top && typeof window.parent.closeEditProfileModal === 'function') {
+                window.parent.closeEditProfileModal();
+            } else {
+                window.location.href = 'lobby.html';
+            }
+        }
+
+        function copyUID() {
+            navigator.clipboard.writeText(document.getElementById('displayUID').innerText);
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'คัดลอก UID', showConfirmButton: false, timer: 1000 });
+        }
+
+        function checkAdminAccess(role) {
+            if (role === 'admin' && targetUid !== currentUser.uid) {
+                document.getElementById('adminPanel').style.display = 'block';
+            }
+        }
+        function updateUserRole(newRole) {
+            Swal.fire({ title: 'ยืนยัน?', text: `มอบยศ: ${newRole}`, icon: 'warning', showCancelButton: true }).then((res) => {
+                if (res.isConfirmed) db.ref('users/' + targetUid).update({ role: newRole });
+            });
+        }
+        async function loadFriendsList(uid) {
+            const grid = document.getElementById('friendsGrid');
+            db.ref(`users/${uid}/friends`).on('value', async snap => {
+                if (!snap.exists()) { grid.innerHTML = '<p style="color:#666;">ไม่มีเพื่อน</p>'; return; }
+                const keys = Object.keys(snap.val());
+                grid.innerHTML = '';
+                for (const fid of keys) {
+                    const fSnap = await db.ref('users/' + fid).get();
+                    const fData = fSnap.val();
+                    if (!fData) continue;
+                    const isOnline = fData.status === 'online';
+                    const color = isOnline ? '#2ecc71' : '#666';
+                    // Show Friend's Theme Color
+                    let friendBorder = fData.profilePrefs ? fData.profilePrefs.colors.card : 'rgba(255,255,255,0.1)';
+                    const item = document.createElement('div');
+                    item.className = 'friend-card';
+                    item.style.borderColor = friendBorder;
+                    item.onclick = () => window.location.href = `profile.html?uid=${fid}`;
+                    item.innerHTML = `<img src="${fData.photoURL}" class="f-img"><div class="f-name" style="color:#fff">${fData.username}</div><div class="f-stat" style="color:${color}">${isOnline?'ONLINE':'OFFLINE'}</div>`;
+                    grid.appendChild(item);
+                }
+            });
+        }
+
+        if (new URLSearchParams(window.location.search).get('mode') === 'iframe') {
+            document.body.style.background = 'transparent';
+            document.querySelector('.container').style.paddingBottom = '0';
         }
     </script>
 </body>

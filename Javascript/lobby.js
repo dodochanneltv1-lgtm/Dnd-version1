@@ -258,75 +258,86 @@ function loadPublicRooms() {
         const rooms = snapshot.val();
 
         if (!rooms) {
-            roomsList.innerHTML = '<li>ยังไม่มีห้องใดถูกสร้าง</li>';
+            roomsList.innerHTML = '<li style="text-align:center; padding:20px; color:#666;">ยังไม่มีห้องใดถูกสร้าง</li>';
             return;
         }
 
-        let hasAnyRoom = false;
         for (const roomId in rooms) {
             const roomData = rooms[roomId];
-            hasAnyRoom = true;
             
-            // ตรวจสอบสิทธิ์ (ของเราเอง เพื่อดูปุ่มแอดมิน)
+            // 1. ตรวจสอบสิทธิ์
             const isOwner = (roomData.dmUid === currentUserId);
             const isAdmin = (currentUserRole === 'admin');
             
-            const isLocked = roomData.password ? ' (🔒 มีรหัส)' : ' (🔓 สาธารณะ)';
+            // 2. ไอคอนกุญแจ
+            const lockIcon = roomData.password ? '🔒' : '🔓';
             
-            // --- [ใหม่] สร้างป้ายยศของ DM เจ้าของห้อง ---
+            // 3. สร้างป้ายยศ (Badge)
             let dmBadge = '';
             if (roomData.dmRole === 'admin') {
-                dmBadge = ' <span class="role-badge role-admin" style="font-size:0.6em; padding:1px 4px;">👑 Admin</span>';
+                dmBadge = ' <span class="role-badge role-admin" style="font-size:0.6em;">👑 ADMIN</span>';
             } else if (roomData.dmRole === 'beta_tester') {
-                dmBadge = ' <span class="role-badge role-beta" style="font-size:0.6em; padding:1px 4px;">🧪 Tester</span>';
+                dmBadge = ' <span class="role-badge role-beta" style="font-size:0.6em;">TESTER</span>';
             }
-            // ------------------------------------------
 
+            // 4. สร้าง Element <li> พร้อม Class ใหม่ "room-card"
             const li = document.createElement('li');
-            li.style.cursor = 'pointer';
-            li.style.position = 'relative';
-
-            // เพิ่ม ${dmBadge} ต่อท้ายชื่อ DM
+            li.className = 'room-card'; 
+            
+            // 5. จัดโครงสร้าง HTML ภายใน (ซ้าย: ข้อมูล, ขวา: ปุ่ม Admin)
             let htmlContent = `
-                <div>
-                    <strong>${roomData.name}</strong>${isLocked} <br> 
-                    <small>สร้างโดย : ${roomData.dmUsername || 'Unknown'}${dmBadge}</small> | <small>ID: ${roomId}</small>
+                <div class="room-info">
+                    <h4>${lockIcon} ${roomData.name}</h4>
+                    <div class="room-meta">
+                        <span>โดย: ${roomData.dmUsername || 'Unknown'}${dmBadge}</span>
+                        <span class="room-id">ID: ${roomId}</span>
+                    </div>
                 </div>
             `;
 
-            // (ส่วนปุ่ม Admin เหมือนเดิม ไม่ต้องแก้)
+            // เพิ่มปุ่ม Admin (ถ้ามีสิทธิ์) เป็นไอคอนเล็กๆ
             if (isAdmin || isOwner) {
                 htmlContent += `
-                    <div style="margin-top:8px; padding-top:5px; border-top:1px dashed rgba(255,255,255,0.2); display:flex; gap:5px; align-items:center;">
-                        <span style="font-size:0.7em; margin-right:auto;">
-                            ${isAdmin ? '<span style="color:#d9534f; border:1px solid #d9534f; padding:0 3px; border-radius:3px;">ADMIN Control</span>' : '<span style="color:#f0ad4e;">★ Owner Control</span>'}
-                        </span>
-                        <button class="admin-btn-reveal" data-id="${roomId}" style="background:#5bc0de; border:none; color:white; padding:2px 8px; border-radius:4px; font-size:0.8em; cursor:pointer;">👁️ ดูรหัส</button>
-                        <button class="admin-btn-delete" data-id="${roomId}" style="background:#d9534f; border:none; color:white; padding:2px 8px; border-radius:4px; font-size:0.8em; cursor:pointer;">🗑️ ลบห้อง</button>
+                    <div class="admin-actions">
+                        <button class="btn-icon btn-reveal" data-id="${roomId}" title="ดูรหัสผ่าน">👁️</button>
+                        <button class="btn-icon btn-delete" data-id="${roomId}" title="ลบห้อง">🗑️</button>
                     </div>
                 `;
             }
 
             li.innerHTML = htmlContent;
             
-            // (Event Listener เหมือนเดิม)
+            // 6. เพิ่ม Event Listeners
+            
+            // คลิกที่การ์ดเพื่อเข้าห้อง
             li.addEventListener('click', (e) => {
-                if (e.target.closest('button')) return;
+                // ถ้าเผลอไปกดโดนปุ่มเล็กๆ (Admin) ไม่ต้องทำงานส่วนนี้
+                if (e.target.closest('button')) return; 
+                
                 document.getElementById('roomIdInput').value = roomId;
                 joinRoomSelection();
             });
 
+            // คลิกปุ่ม Admin
             if (isAdmin || isOwner) {
-                const revealBtn = li.querySelector('.admin-btn-reveal');
-                const deleteBtn = li.querySelector('.admin-btn-delete');
-                if (revealBtn) revealBtn.onclick = (e) => { e.stopPropagation(); revealRoomSecrets(roomId, roomData); };
-                if (deleteBtn) deleteBtn.onclick = (e) => { e.stopPropagation(); forceDeleteRoom(roomId); };
+                const revealBtn = li.querySelector('.btn-reveal');
+                const deleteBtn = li.querySelector('.btn-delete');
+                
+                if (revealBtn) {
+                    revealBtn.onclick = (e) => { 
+                        e.stopPropagation(); // ห้าม Trigger การเข้าห้อง
+                        revealRoomSecrets(roomId, roomData); 
+                    };
+                }
+                if (deleteBtn) {
+                    deleteBtn.onclick = (e) => { 
+                        e.stopPropagation(); 
+                        forceDeleteRoom(roomId); 
+                    };
+                }
             }
 
             roomsList.appendChild(li);
-        }
-        if (!hasAnyRoom) {
-            roomsList.innerHTML = '<li>ยังไม่มีห้องใดถูกสร้าง</li>';
         }
     });
 }

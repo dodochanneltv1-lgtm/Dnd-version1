@@ -3,14 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <title>DnD System (Persistent Music)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css"> 
     <script src="Javascript/BG.js"></script>
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+        /* --- Base Settings --- */
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: 'Prompt', sans-serif; }
+        
         #contentFrame {
             width: 100%; height: 100vh; border: none;
             background-color: transparent; text-align: center;
         }
+        
+        /* --- Background System --- */
         #background-layers {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1;
         }
@@ -21,71 +26,111 @@
         }
         .bg-layer.active { opacity: 1; }
         
-        /* [ADDED] สไตล์สำหรับตัวควบคุมเสียง */
+        /* --- Volume Control (Glass Style) --- */
         #volume-control {
             position: fixed;
-            bottom: 20px;
-            left: 20px;
-            background-color: rgba(0, 0, 0, 0.5);
-            padding: 10px 15px;
-            border-radius: 50px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
+            bottom: 25px;
+            left: 25px;
+            background-color: rgba(10, 10, 15, 0.7);
+            padding: 10px 20px;
+            border-radius: 30px;
+            display: flex; align-items: center; gap: 15px;
             z-index: 1000;
-        }
-        #volume-control span {
-            font-size: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(5px);
+            color: #ffae00;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
         }
         #volumeSlider {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 120px;
-            height: 5px;
-            background: #ddd;
-            outline: none;
-            opacity: 0.7;
-            transition: opacity .2s;
-            border-radius: 3px;
+            -webkit-appearance: none; appearance: none;
+            width: 100px; height: 4px;
+            background: rgba(255,255,255,0.2);
+            outline: none; border-radius: 2px;
         }
-        #volumeSlider:hover { opacity: 1; }
         #volumeSlider::-webkit-slider-thumb {
             -webkit-appearance: none; appearance: none;
-            width: 15px; height: 15px; background: #ffae00;
+            width: 14px; height: 14px; background: #ffae00;
             cursor: pointer; border-radius: 50%;
+            box-shadow: 0 0 10px rgba(255, 174, 0, 0.5);
         }
-        #volumeSlider::-moz-range-thumb {
-            width: 15px; height: 15px; background: #ffae00;
-            cursor: pointer; border-radius: 50%;
+
+        /* --- Chat Button (New Design) --- */
+        #chat-trigger-btn {
+            position: fixed;
+            bottom: 25px;
+            right: 25px;
+            z-index: 9000;
+            width: 65px; height: 65px;
+            border-radius: 50%;
+            background: rgba(10, 10, 15, 0.85); /* พื้นหลังเข้มโปร่งแสง */
+            border: 2px solid #ffae00; /* ขอบทอง */
+            box-shadow: 0 0 20px rgba(255, 174, 0, 0.3);
+            color: #ffae00;
+            font-size: 28px;
+            display: flex; justify-content: center; align-items: center;
+            cursor: pointer;
+            backdrop-filter: blur(5px);
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        #chat-trigger-btn:hover {
+            transform: scale(1.1) rotate(5deg);
+            box-shadow: 0 0 35px rgba(255, 174, 0, 0.8);
+            background: #ffae00;
+            color: #000;
+        }
+
+        /* --- Social Overlay Container --- */
+        #social-overlay-container {
+            display: none; /* ซ่อนไว้ก่อน */
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 85vw; height: 85vh;
+            max-width: 1200px;
+            z-index: 10000;
+            /* ไม่ใส่พื้นหลังและขอบตรงนี้ เพราะ social.html มีขอบโค้งสวยๆ อยู่แล้ว */
+            background: transparent;
+            border: none;
+            box-shadow: none;
+            animation: popupFadeIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        /* ปุ่มปิดหน้าต่าง (Floating Close Button) */
+        .close-overlay-floating {
+            position: absolute;
+            top: -15px;
+            right: -15px;
+            width: 40px; height: 40px;
+            background: #d9534f;
+            color: white;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            font-size: 1.2em;
+            cursor: pointer;
+            z-index: 10001; /* อยู่เหนือ iframe */
+            display: flex; justify-content: center; align-items: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+            transition: transform 0.2s;
+        }
+        .close-overlay-floating:hover {
+            transform: scale(1.1);
+            background: red;
+        }
+
+        #social-iframe {
+            width: 100%; height: 100%;
+            border: none;
+            border-radius: 16px; /* โค้งตาม social.html */
+        }
+
+        @keyframes popupFadeIn {
+            from { opacity: 0; transform: translate(-50%, -45%) scale(0.9); }
+            to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
         }
     </style>
 </head>
 <body>
-    <div style="position:fixed; bottom:20px; right:20px; z-index:999;">
-        <button onclick="openSocialWindow()" style="
-            background: linear-gradient(135deg, #ffae00, #ff4500);
-            color: white;
-            border: 2px solid #fff;
-            border-radius: 50%;
-            width: 60px; height: 60px;
-            font-size: 24px;
-            box-shadow: 0 0 15px rgba(255, 69, 0, 0.8);
-            cursor: pointer;
-            transition: transform 0.2s;
-        " title="เพื่อน & แชท">
-            💬
-        </button>
-    </div>
 
-    <script>
-        // เพิ่มฟังก์ชันนี้ใน script ของ lobby.html (หรือใส่ไว้ท้าย body)
-        function openSocialWindow() {
-            // เปิดหน้าต่างใหม่แบบ Popup
-            window.open('social.html', 'SocialWindow', 'width=1000,height=700,resizable=yes,scrollbars=yes');
-        }
-    </script>
-
-    
     <div id="background-layers">
         <div id="bg-layer-1" class="bg-layer"></div>
         <div id="bg-layer-2" class="bg-layer"></div>
@@ -97,25 +142,51 @@
     </div>
 
     <iframe src="player.html" style="display:none;" id="musicFrame"></iframe>
+    
     <iframe src="menu.html" id="contentFrame" name="contentFrame"></iframe>
+
+    <div id="chat-trigger-btn" onclick="toggleSocialWindow()" title="เปิด Social Hub">
+        💬
+    </div>
+
+    <div id="social-overlay-container">
+        <div class="close-overlay-floating" onclick="toggleSocialWindow()">✕</div>
+        <iframe src="social.html" id="social-iframe"></iframe>
+    </div>
 
     <script>
         const musicPlayerFrame = document.getElementById('musicFrame');
         const volumeSlider = document.getElementById('volumeSlider');
         
-        // Listener รอรับคำสั่งให้เล่นเพลงจากหน้าลูก (เช่น menu.html)
+        // Listener รอรับคำสั่งเล่นเพลง
         window.addEventListener('message', (event) => {
             if(event.data === 'REQUEST_PLAY_MUSIC'){
-                // ส่งคำสั่งต่อไปให้ iframe ที่เล่นเพลงโดยเฉพาะ
                 musicPlayerFrame.contentWindow.postMessage({ action: 'playMusic' }, '*');
             }
         });
 
-        // [ADDED] Listener สำหรับ Slider ปรับเสียง
+        // Volume Control
         volumeSlider.addEventListener('input', (event) => {
             const volumeValue = parseFloat(event.target.value);
             musicPlayerFrame.contentWindow.postMessage({ action: 'setVolume', value: volumeValue }, '*');
         });
+
+        // Toggle Social Window
+        function toggleSocialWindow() {
+            const overlay = document.getElementById('social-overlay-container');
+            const btn = document.getElementById('chat-trigger-btn');
+            
+            if (overlay.style.display === 'block') {
+                overlay.style.display = 'none';
+                btn.style.opacity = '1';
+                btn.style.transform = 'scale(1)';
+            } else {
+                overlay.style.display = 'block';
+                // ซ่อนปุ่มแชทชั่วคราว หรือทำให้จางลงตอนเปิดหน้าต่าง
+                btn.style.opacity = '0'; 
+                btn.style.transform = 'scale(0)';
+            }
+        }
     </script>
 </body>
 </html>

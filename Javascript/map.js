@@ -741,3 +741,174 @@ window.onload = function() {
     // (แสดง UI เริ่มต้น)
     showMapUI('building');
 };
+
+// =================================================================================
+// 6. DM Tools Logic (เพิ่มใหม่)
+// =================================================================================
+
+// เช็คสิทธิ์ DM เมื่อโหลด
+function checkDMPermission() {
+    if (!roomRef || !currentUserUid) return;
+    
+    // ดึงข้อมูลห้องเพื่อเช็ค dmUid
+    roomRef.once('value').then(snap => {
+        const room = snap.val();
+        if (room && room.dmUid === currentUserUid) {
+            // ถ้าใช่ DM ให้แสดงปุ่ม
+            const btn = document.getElementById('btn-dm-tools');
+            if(btn) btn.style.display = 'block';
+        }
+    });
+}
+
+// เรียกใช้ฟังก์ชันเช็คสิทธิ์ตอนโหลดหน้าเว็บ
+// (เพิ่มบรรทัดนี้ใน window.onload หรือเรียกต่อท้ายไฟล์เลยก็ได้)
+setTimeout(checkDMPermission, 1000); 
+
+
+// เปิด/ปิด หน้าต่างเครื่องมือ
+function toggleDMTools() {
+    const panel = document.getElementById('dm-tools-panel');
+    const btn = document.getElementById('btn-dm-tools');
+    
+    if (panel && btn) {
+        panel.classList.toggle('active');
+        btn.classList.toggle('active');
+    }
+}
+
+// สลับ Tab
+function switchDMTab(tabName) {
+    document.getElementById('dm-tab-shop').classList.add('hidden');
+    document.getElementById('dm-tab-quest').classList.add('hidden');
+    document.getElementById('dm-tab-misc').classList.add('hidden');
+    
+    document.getElementById('dm-tab-' + tabName).classList.remove('hidden');
+}
+
+// --- ฟังก์ชันทำงานจริง ---
+
+// 1. เพิ่มไอเทมเข้าร้าน
+function dmAddItem() {
+    const shopId = document.getElementById('dmShopSelect').value;
+    const name = document.getElementById('dmItemName').value.trim();
+    const price = parseInt(document.getElementById('dmItemPrice').value) || 0;
+    const type = document.getElementById('dmItemType').value;
+    
+    if (!name) return Swal.fire('ข้อมูลไม่ครบ', 'กรุณาใส่ชื่อไอเทม', 'warning');
+
+    // แปลง Stats string (เช่น "STR:2,DEX:1") เป็น Object
+    const statsStr = document.getElementById('dmItemStats').value.trim();
+    let bonuses = {};
+    if (statsStr) {
+        statsStr.split(',').forEach(pair => {
+            const [key, val] = pair.split(':');
+            if(key && val) bonuses[key.toUpperCase().trim()] = parseInt(val);
+        });
+    }
+
+    const newItem = {
+        name: name,
+        price: price,
+        itemType: type,
+        bonuses: bonuses,
+        durability: 100
+    };
+
+    db.ref(`rooms/${roomId}/shops/${shopId}`).push(newItem)
+        .then(() => {
+            Swal.fire('เรียบร้อย', `เพิ่ม ${name} เข้าร้านแล้ว`, 'success');
+            // ล้างช่อง
+            document.getElementById('dmItemName').value = '';
+            document.getElementById('dmItemStats').value = '';
+        });
+}
+
+// 2. เพิ่มเควส
+function dmAddQuest() {
+    const title = document.getElementById('dmQuestTitle').value.trim();
+    const desc = document.getElementById('dmQuestDesc').value.trim();
+    const job = document.getElementById('dmQuestClass').value;
+    const lvl = parseInt(document.getElementById('dmQuestLevel').value);
+
+    if (!title) return Swal.fire('ข้อมูลไม่ครบ', 'กรุณาใส่ชื่อเควส', 'warning');
+
+    const questId = `quest_${job}_${Date.now()}`; // สร้าง ID ไม่ซ้ำ
+    const questData = {
+        title: title,
+        description: desc || "ไม่มีรายละเอียด",
+        requiredClass: job,
+        requiredLevel: lvl
+    };
+
+    db.ref(`rooms/${roomId}/guild/quests/${questId}`).set(questData)
+        .then(() => Swal.fire('เรียบร้อย', 'ประกาศเควสแล้ว', 'success'));
+}
+
+// 3. ฟังก์ชันอื่นๆ
+function dmHealAll() {
+    // ดึงผู้เล่นทุกคน แล้ว Heal
+    db.ref(`rooms/${roomId}/playersByUid`).once('value', snap => {
+        const updates = {};
+        snap.forEach(child => {
+            const p = child.val();
+            // (คำนวณ MaxHP ง่ายๆ หรือดึงจาก saved maxHp)
+            const maxHp = p.maxHp || 100; 
+            updates[`rooms/${roomId}/playersByUid/${child.key}/hp`] = maxHp;
+        });
+        db.ref().update(updates).then(() => Swal.fire('Healed!', 'ฟื้นฟูทุกคนแล้ว', 'success'));
+    });
+}
+
+function dmClearEnemies() {
+    Swal.fire({
+        title: 'ยืนยัน?', text: 'ลบมอนสเตอร์ทั้งหมดในฉาก?', icon: 'warning',
+        showCancelButton: true, confirmButtonText: 'ลบเลย'
+    }).then((res) => {
+        if (res.isConfirmed) {
+            db.ref(`rooms/${roomId}/enemies`).remove()
+                .then(() => Swal.fire('Deleted', 'เคลียร์พื้นที่เรียบร้อย', 'success'));
+        }
+    });
+}
+
+function dmGiveMoney() {
+    db.ref(`rooms/${roomId}/playersByUid`).once('value', snap => {
+        snap.forEach(child => {
+            const p = child.val();
+            const newGp = (p.gp || 0) + 100;
+            db.ref(`rooms/${roomId}/playersByUid/${child.key}/gp`).set(newGp);
+        });
+        Swal.fire('Rich!', 'แจกเงินคนละ 100 GP แล้ว', 'success');
+    });
+}
+
+function toggleMainMenu() {
+    const panel = document.getElementById('main-menu-panel');
+    const btn = document.getElementById('btn-main-menu');
+    
+    // สลับ class active
+    panel.classList.toggle('active');
+    btn.classList.toggle('active'); // ให้ปุ่มหมุนด้วย
+}
+
+// ฟังก์ชันเลือกแผนที่แล้วปิดเมนูอัตโนมัติ
+function selectMap(type) {
+    showMapUI(type);
+    
+    // ปิดเมนู (เอา class active ออก)
+    document.getElementById('main-menu-panel').classList.remove('active');
+    document.getElementById('btn-main-menu').classList.remove('active');
+}
+
+// (Optional) คลิกที่อื่นเพื่อปิดเมนู
+window.addEventListener('click', function(e) {
+    const btn = document.getElementById('btn-main-menu');
+    const panel = document.getElementById('main-menu-panel');
+    
+    // ถ้าคลิกไม่ได้โดนปุ่ม และไม่ได้โดนเมนู
+    if (!btn.contains(e.target) && !panel.contains(e.target)) {
+        panel.classList.remove('active');
+        btn.classList.remove('active');
+    }
+});

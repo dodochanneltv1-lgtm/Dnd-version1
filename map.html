@@ -14,247 +14,339 @@
             margin: 0;
             padding: 0;
             overflow: hidden;
+            font-family: 'Prompt', sans-serif;
+            background: #000; /* Fallback background */
         }
         
         /* 1. ส่วนควบคุมแผนที่ (ด้านบน) */
-        #main-controls {
-            position: sticky; /* หรือ fixed ถ้าอยากให้ลอยตลอด */
-            top: 0;
-            left: 0;
-            width: 100%;
-            background: rgba(0, 0, 0, 0.9);
-            border-bottom: 2px solid #ffae00;
-            padding: 10px 0; /* ลด padding แนวข้าง */
-            text-align: center;
-            z-index: 1000; /* ดันให้สูงกว่าเลเยอร์อื่น */
-            box-sizing: border-box; /* ป้องกัน padding ดันความกว้างเกิน */
+        #btn-main-menu {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 2000;
+            
+            width: 50px !important;
+            height: 50px !important;
+            border-radius: 50%;
+            
+            background: linear-gradient(135deg, #0984e3, #74b9ff);
+            color: white;
+            border: 2px solid rgba(255,255,255,0.5);
+            box-shadow: 0 4px 15px rgba(0, 100, 255, 0.5);
+            
+            font-size: 24px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* เด้งดึ๋ง */
+            
             display: flex;
             justify-content: center;
-            flex-wrap: wrap; /* ให้ปุ่มตกบรรทัดถ้าจอเล็ก */
-        }
-        
-        #main-controls button {
-            width: auto;
-            padding: 8px 15px;
-            margin: 0 5px;
-            font-size: 0.9em;
+            align-items: center;
         }
 
-        /* 2. ส่วนเนื้อหาหลัก (แผนที่ + แดชบอร์ด) */
+        #btn-main-menu.active {
+            transform: rotate(90deg);
+            background: linear-gradient(135deg, #ff7675, #d63031); /* เปลี่ยนเป็นสีแดงตอนเปิด */
+            box-shadow: 0 0 15px rgba(255, 118, 117, 0.6);
+            border-color: #ffeaa7;
+        }
+        #main-menu-panel {
+            position: fixed;
+            top: 80px;
+            left: 20px;
+            z-index: 2001;
+            
+            width: 200px;
+            background: rgba(15, 15, 20, 0.95);
+            border: 1px solid #0984e3;
+            border-radius: 12px;
+            padding: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            
+            /* --- ตั้งค่า Animation --- */
+            transform-origin: top left; /* ให้ขยายออกมาจากมุมซ้ายบน (จุดที่ปุ่มอยู่) */
+            transform: scale(0) translateY(-20px); /* เริ่มต้น: หดเหลือ 0 และลอยขึ้น */
+            opacity: 0; /* เริ่มต้น: จาง */
+            visibility: hidden; /* ซ่อนไว้ไม่ให้กดโดน */
+            
+            /* ความนุ่มนวลแบบสปริง */
+            transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        /* สถานะ: เปิดเมนู (Active) */
+        #main-menu-panel.active {
+            transform: scale(1) translateY(0); /* ขยายเต็ม + กลับมาที่เดิม */
+            opacity: 1; /* ชัดเจน */
+            visibility: visible;
+        }
+
+        /* ปุ่มในเมนูย่อย (ให้เด้งเรียงลำดับสวยๆ) */
+        .menu-btn {
+            /* ... สไตล์เดิม ... */
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #ddd;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            text-align: left;
+            transition: 0.2s;
+            font-size: 0.95em;
+            display: flex; align-items: center; gap: 10px;
+            
+            /* ซ่อนไว้ก่อน เพื่อรอ Slide เข้ามา */
+            transform: translateX(-10px);
+            opacity: 0;
+            transition: all 0.3s ease-out;
+        }
+
+        /* เมื่อเมนูเปิด ให้ปุ่มข้างใน Slide ออกมา */
+        #main-menu-panel.active .menu-btn {
+            transform: translateX(0);
+            opacity: 1;
+        }
+
+        /* Delay ให้ปุ่มเรียงกันออกมาทีละอัน (Stagger Effect) */
+        #main-menu-panel.active .menu-btn:nth-child(2) { transition-delay: 0.1s; }
+        #main-menu-panel.active .menu-btn:nth-child(3) { transition-delay: 0.15s; }
+        #main-menu-panel.active .menu-btn:nth-child(4) { transition-delay: 0.2s; }
+        #main-menu-panel.active .menu-btn:nth-child(6) { transition-delay: 0.25s; } /* ปุ่มออก */
+
+        .menu-btn:hover {
+            background: rgba(9, 132, 227, 0.2);
+            border-color: #0984e3;
+            color: white;
+            transform: translateX(5px) !important; /* ขยับขวานิดนึงตอนชี้ */
+        }
+
+        .menu-btn-exit { border-color: #d63031; color: #ff6b6b; }
+        .menu-btn-exit:hover { background: rgba(214, 48, 49, 0.2); color: #fff; }
+
+        /* 2. ส่วนเนื้อหาหลัก */
         #content-area {
             display: flex;
             flex-grow: 1;
             overflow: hidden;
-            position: relative; /* สำหรับ Modal */
+            position: relative; 
         }
 
-        /* 2.1 UI แผนที่และ Modal (ซ้อนทับอยู่ด้านบน) */
+        /* 2.1 UI แผนที่ (Overlay) */
         #map-ui-container {
             position: absolute;
-            top : 0; left: 0; right: 0; bottom: 0;
-            background: rgba(10, 0, 0, 0.75);
-            backdrop-filter: blur(5px);
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
             z-index: 5;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 20px;
-            color: white;
-            transition: opacity 0.3s ease, visibility 0.3s ease;
+            transition: opacity 0.3s ease;
         }
         
         #map-ui-container.hidden {
             opacity: 0;
-            visibility: hidden;
             pointer-events: none;
+            z-index: -1;
         }
 
-        .map-panel, .shop-panel, .guild-panel, .inn-panel {
-            width: 100%;
-            max-width: 600px;
-            max-height: 90vh;
+        /* Common Panel Style */
+        .map-panel, .shop-panel, .guild-panel, .inn-panel, .colosseum-panel {
+            width: 90%; max-width: 600px;
+            max-height: 85vh;
             overflow-y: auto;
-            padding: 20px;
-            background: rgba(20, 10, 0, 0.9);
-            border: 1px solid #ffae00;
+            padding: 25px;
+            background: rgba(20, 20, 25, 0.95);
+            border: 1px solid rgba(255, 183, 0, 0.3);
             border-radius: 12px;
-            box-shadow: 0 0 20px rgba(255, 165, 0, 0.5);
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+            color: white;
         }
 
-        .map-panel h2, .shop-panel h2, .guild-panel h2, .inn-panel h2 {
-            margin-top: 0;
-            color: #ffc107;
-            border-bottom: 1px solid #ffae00;
-            padding-bottom: 10px;
-        }
-
-        .map-panel button, .shop-panel button, .guild-panel button, .inn-panel button {
-            display: block;
-            width: 100%;
-            margin-bottom: 10px;
-        }
-
-        /* 2.2 Iframe แดชบอร์ด (อยู่ด้านล่างสุด) */
-        #dashboard-iframe-container {
-            flex-grow: 1;
-            height: 100%;
-            border: none;
-        }
+        h2 { margin-top: 0; color: #ffb700; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; }
         
-        #dashboard-iframe {
-            width: 100%;
-            height: 100%;
-            border: none;
+        .panel-btn {
+            display: block; width: 100%; margin-bottom: 10px;
+            padding: 10px; border: none; border-radius: 6px;
+            background: rgba(255,255,255,0.1); color: white; cursor: pointer;
+            text-align: left; transition: 0.2s;
+        }
+        .panel-btn:hover { background: rgba(255,183,0,0.2); color: #ffb700; }
+
+        /* 2.2 Iframe */
+        #dashboard-iframe-container { flex-grow: 1; height: 100%; }
+        #dashboard-iframe { width: 100%; height: 100%; border: none; }
+
+        .hidden { display: none !important; }
+
+        #btn-dm-tools {
+            position: fixed; 
+            top: 20px; 
+            right: 20px; /* มุมขวาบน */
+            z-index: 2000;
+            
+            width: 50px !important; 
+            height: 50px !important; 
+            border-radius: 50%;
+            padding: 0;
+            
+            background: linear-gradient(135deg, #d63031, #e17055); 
+            color: white; 
+            border: 2px solid rgba(255,255,255,0.5);
+            box-shadow: 0 4px 15px rgba(214, 48, 49, 0.5);
+            
+            font-size: 24px;
+            cursor: pointer; 
+            
+            /* Animation Transition */
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            display: flex; justify-content: center; align-items: center;
         }
 
-        /* UI ร้านค้า/กิลด์ (ซ่อนไว้) */
-        .hidden { display: none; }
-        
-        /* สไตล์รายการในร้านค้า/กิลด์ */
-        .shop-item, .guild-quest {
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid #a97125;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 10px;
+        /* เอฟเฟกต์ตอนเปิด (หมุน + เรืองแสง) */
+        #btn-dm-tools.active {
+            transform: rotate(-90deg) scale(1.1); /* หมุนคนละด้านกับเมนูซ้าย */
+            box-shadow: 0 0 25px rgba(214, 48, 49, 0.8);
+            border-color: #fff;
+            background: #c0392b;
         }
-        .shop-item h4, .guild-quest h4 {
-            margin: 0 0 10px 0;
-            color: #ffeb8a;
+
+        /* --- หน้าต่าง DM Panel (Popup Animation) --- */
+        #dm-tools-panel {
+            position: fixed; 
+            top: 50%; 
+            left: 50%; 
+            /* จัดกึ่งกลางด้วย transform (ต้องระวังตอน animate) */
+            
+            width: 90%; 
+            max-width: 450px; 
+            z-index: 10000; 
+            
+            background: rgba(20, 20, 25, 0.95);
+            border: 1px solid #e17055;
+            border-radius: 16px;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            padding: 20px;
+            
+            /* --- Animation State: ปิดอยู่ --- */
+            opacity: 0;
+            visibility: hidden;
+            /* เริ่มต้น: อยู่กลางจอ แต่หดเล็ก (Scale 0.5) */
+            transform: translate(-50%, -50%) scale(0.5);
+            
+            /* Effect เด้งดึ๋ง */
+            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
-        .shop-item p, .guild-quest p {
-            margin: 5px 0;
-            font-family: 'Prompt', sans-serif;
+
+        /* --- Animation State: เปิดอยู่ --- */
+        #dm-tools-panel.active {
+            opacity: 1;
+            visibility: visible;
+            /* ขยายเต็มที่ */
+            transform: translate(-50%, -50%) scale(1);
         }
-        .shop-item .price {
-            font-size: 1.2em;
-            font-weight: bold;
-            color: #ffd700;
-        }
-        .shop-item button, .guild-quest button {
-            width: auto;
-            padding: 5px 15px;
-            margin-top: 10px;
-            background-color: #28a745;
-        }
-        .guild-quest button[disabled] {
-            background-color: #6c757d;
-            cursor: not-allowed;
-        }
-        
     </style>
 </head>
 <body>
 
-    <!-- 1. ส่วนควบคุมแผนที่ (ด้านบน) -->
-    <div id="main-controls">
-        <button id="btn-show-world" onclick="showMapUI('world')">🗺️ แผนที่นอกเมือง</button>
-        <button id="btn-show-city" onclick="showMapUI('city')">🏙️ แผนที่ภายในเมือง</button>
-        <button id="btn-show-building" onclick="showMapUI('building')">🏛️ ภายในอาคาร</button>
-        <a href="lobby.html" style="float: right;"><button style="background-color: #6c757d;">🚪 กลับล็อบบี้</button></a>
+    <button id="btn-main-menu" onclick="toggleMainMenu()">
+        🗺️
+    </button>
+
+    <div id="main-menu-panel">
+        <h4 style="margin:0 0 10px 0; color:#74b9ff; border-bottom:1px solid #333; padding-bottom:5px;">
+            📍 นำทาง
+        </h4>
+        <button class="menu-btn" onclick="selectMap('world')">🌲 นอกเมือง</button>
+        <button class="menu-btn" onclick="selectMap('city')">🏙️ ในเมือง</button>
+        <button class="menu-btn" onclick="selectMap('building')">🏛️ อาคาร</button>
+        <div style="height:5px;"></div>
+        <a href="lobby.html" style="text-decoration:none;">
+            <button class="menu-btn menu-btn-exit">🚪 ออกจากเกม</button>
+        </a>
     </div>
 
-    <!-- 2. ส่วนเนื้อหาหลัก -->
     <div id="content-area">
 
-        <!-- 2.1 UI แผนที่และ Modal (ซ้อนทับอยู่ด้านบน) -->
         <div id="map-ui-container" class="hidden">
             
-            <!-- 2.1.1 ระดับ 1: แผนที่นอกเมือง -->
             <div id="world-map-panel" class="map-panel hidden">
-                <h2>🗺️ แผนที่นอกเมือง</h2>
-                <button onclick="showMapUI('city')">เดินทางเข้าเมือง</button>
-                <button style="background-color: #6c757d;" disabled>ป่าต้องห้าม (Lvl 10+)</button>
-                <button style="background-color: #6c757d;" disabled>ภูเขาไฟ (Lvl 30+)</button>
-                <button onclick="hideMapUI()">ปิดแผนที่</button>
+                <h2>🗺️ แผนที่โลก</h2>
+                <button class="panel-btn" onclick="showMapUI('city')">🏰 เดินทางเข้าเมืองหลวง</button>
+                <button class="panel-btn" style="opacity:0.5; cursor:not-allowed;">🌲 ป่าต้องห้าม (Lv.10+)</button>
+                <button class="panel-btn" style="opacity:0.5; cursor:not-allowed;">🌋 ภูเขาไฟ (Lv.30+)</button>
+                <button class="panel-btn" onclick="hideMapUI()" style="margin-top:15px; border:1px solid #ff4444; color:#ff4444;">❌ ปิดหน้าต่าง</button>
             </div>
 
-            <!-- 2.1.2 ระดับ 2: แผนที่ภายในเมือง -->
             <div id="city-map-panel" class="map-panel hidden">
-                <h2>🏙️ แผนที่ภายในเมือง</h2>
-                <button onclick="showMapUI('building')">ไปย่านอาคาร (กิลด์/ร้านค้า)</button>
-                <button onclick="showMapUI('world')">เดินทางออกนอกเมือง</button>
-                <button onclick="showBuildingUI('colosseum')" style="background: linear-gradient(90deg, #d63031, #b71540);">⚔️ โคลอสเซียม (PvP)</button>
-                <button onclick="hideMapUI()">ปิดแผนที่</button>
+                <h2>🏙️ เมืองหลวง</h2>
+                <button class="panel-btn" onclick="showMapUI('building')">🏘️ ย่านการค้า & กิลด์</button>
+                <button class="panel-btn" onclick="showBuildingUI('colosseum')">⚔️ โคลอสเซียม (PvP)</button>
+                <button class="panel-btn" onclick="showMapUI('world')">🌍 ออกนอกเมือง</button>
+                <button class="panel-btn" onclick="hideMapUI()" style="margin-top:15px; border:1px solid #ff4444; color:#ff4444;">❌ ปิดหน้าต่าง</button>
+            </div>
+
+            <div id="building-map-panel" class="map-panel hidden">
+                <h2>🏛️ ภายในอาคาร</h2>
+                <button class="panel-btn" onclick="showBuildingUI('guild')">📜 กิลด์นักผจญภัย</button>
+                <button class="panel-btn" onclick="showBuildingUI('shops')">🛍️ ย่านร้านค้า</button>
+                <button class="panel-btn" onclick="showBuildingUI('inn')">🏨 โรงเตี๊ยม (ฟื้นฟู)</button>
+                <button class="panel-btn" onclick="showMapUI('city')" style="margin-top:15px;">⬅️ กลับแผนที่เมือง</button>
+            </div>
+
+            <div id="guild-panel" class="guild-panel hidden">
+                <h2>📜 กิลด์นักผจญภัย</h2>
+                <div id="guild-quest-list" style="margin-bottom:15px;">
+                    <p>กำลังโหลด...</p>
+                </div>
+                
+                <div id="guild-subclass-section" class="hidden" style="border-top:1px dashed #555; padding-top:15px;">
+                    <h4>🏅 ลงทะเบียนอาชีพรอง (Lv.10+)</h4>
+                    <select id="subclass-select" class="dm-input"></select>
+                    <button class="panel-btn" style="background:#28a745;" onclick="registerSubClass()">ยืนยันอาชีพรอง</button>
+                </div>
+                <button class="panel-btn" onclick="showMapUI('building')" style="margin-top:15px;">⬅️ ออกจากกิลด์</button>
+            </div>
+
+            <div id="inn-panel" class="inn-panel hidden">
+                <h2>🏨 โรงเตี๊ยม</h2>
+                <p style="color:#aaa;">พักผ่อนเพื่อฟื้นฟู HP/MP และล้างสถานะผิดปกติ</p>
+                <button id="btn-rest" class="panel-btn" style="background:#28a745;" onclick="restAtInn()">💤 พักผ่อน (10 GP)</button>
+                <button class="panel-btn" onclick="showMapUI('building')" style="margin-top:15px;">⬅️ ออกจากร้าน</button>
+            </div>
+
+            <div id="shop-select-panel" class="shop-panel hidden">
+                <h2>🛍️ เลือกประเภทร้านค้า</h2>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <button class="panel-btn" onclick="openShop('weapon_basic')">🗡️ อาวุธพื้นฐาน</button>
+                    <button class="panel-btn" onclick="openShop('weapon_common')">⚔️ อาวุธทั่วไป</button>
+                    <button class="panel-btn" onclick="openShop('weapon_magic')">✨ อาวุธเวท</button>
+                    <button class="panel-btn" onclick="openShop('armor')">🛡️ เกราะ/โล่</button>
+                    <button class="panel-btn" onclick="openShop('general')">🎒 ของจิปาถะ</button>
+                    <button class="panel-btn" onclick="openShop('weapon_high')">🔥 อาวุธระดับสูง</button>
+                </div>
+                <button class="panel-btn" onclick="showMapUI('building')" style="margin-top:15px;">⬅️ กลับ</button>
+            </div>
+
+            <div id="shop-item-panel" class="shop-panel hidden">
+                <h2 id="shop-title">ร้านค้า</h2>
+                <div id="shop-item-list">
+                    <p>กำลังโหลดสินค้า...</p>
+                </div>
+                <button class="panel-btn" onclick="showBuildingUI('shops')" style="margin-top:15px;">⬅️ กลับหน้ารวมร้าน</button>
             </div>
 
             <div id="colosseum-panel" class="colosseum-panel hidden">
-                <h2 style="color: #ff4d4d; border-color: #ff4d4d;">⚔️ โคลอสเซียม</h2>
-                <p style="text-align: center; color: #ccc;">สถานที่สำหรับผู้กล้าที่ต้องการประลองฝีมือ</p>
-                
-                <div style="background: rgba(0,0,0,0.4); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
-                    <h4 style="margin-top: 0; color: #ffeb8a;">รายชื่อผู้รอประลอง</h4>
-                    <ul id="colosseum-player-list" style="list-style: none; padding: 0; min-height: 50px;">
-                        <li>กำลังโหลด...</li>
+                <h2 style="color:#ff4d4d;">⚔️ โคลอสเซียม</h2>
+                <div style="background:rgba(0,0,0,0.3); padding:15px; border-radius:8px; margin-bottom:15px;">
+                    <h4 style="margin:0 0 10px 0; color:#aaa;">ผู้ท้าชิงที่รออยู่:</h4>
+                    <ul id="colosseum-player-list" style="list-style:none; padding:0; color:white;">
+                        <li>...</li>
                     </ul>
                 </div>
-
-                <button id="btn-join-colosseum" onclick="toggleColosseumStatus()" style="background-color: #28a745;">ลงทะเบียนประลอง</button>
-                <hr>
-                <button onclick="showMapUI('city')">ออกจากโคลอสเซียม</button>
-            </div>
-
-            <!-- 2.1.3 ระดับ 3: ภายในอาคาร -->
-            <div id="building-map-panel" class="map-panel hidden">
-                <h2>🏛️ ภายในอาคาร</h2>
-                <button onclick="showBuildingUI('guild')">1. กิลด์นักผจญภัย</button>
-                <button onclick="showBuildingUI('shops')">2. ย่านร้านค้า</button>
-                <button onclick="showBuildingUI('inn')">3. โรงเตี๊ยม</button>
-                <button onclick="showMapUI('city')">กลับไปแผนที่เมือง</button>
-                <button onclick="hideMapUI()">ปิดแผนที่</button>
-            </div>
-
-            <!-- 2.1.4 หน้าจอ กิลด์ (ข้อ 10) -->
-            <div id="guild-panel" class="guild-panel hidden">
-                <h2>📜 กิลด์นักผจญภัย</h2>
-                <div id="guild-quest-list">
-                    <!-- Javascript/map.js จะเติมเควสเลื่อนขั้นที่นี่ -->
-                    <p>กำลังโหลดเควส...</p>
-                </div>
-                <hr>
-                <div id="guild-subclass-section" class="hidden">
-                    <h4>ลงทะเบียนอาชีพรอง (Level 10+)</h4>
-                    <select id="subclass-select">
-                        <!-- Javascript/map.js จะเติมอาชีพ T1 ที่นี่ยกเว้นอาชีพหลัก -->
-                    </select>
-                    <button onclick="registerSubClass()">ยืนยันอาชีพรอง</button>
-                </div>
-                <hr>
-                <button onclick="showMapUI('building')">ออกจากกิลด์</button>
-            </div>
-
-            <!-- 2.1.5 หน้าจอ โรงเตี๊ยม (ข้อ 10) -->
-            <div id="inn-panel" class="inn-panel hidden">
-                <h2>🏨 โรงเตี๊ยม</h2>
-                <p>การพักผ่อนจะฟื้นฟู HP, MP และล้างสถานะผิดปกติทั้งหมด</p>
-                <p>(ในอนาคต: จะล้างคูลดาวน์สกิลแบบ PERSONAL ด้วย)</p>
-                <button id="btn-rest" onclick="restAtInn()">พักผ่อน (ราคา 10 GP)</button>
-                <hr>
-                <button onclick="showMapUI('building')">ออกจากโรงเตี๊ยม</button>
-            </div>
-
-            <!-- 2.1.6 หน้าจอ เลือกประเภทร้านค้า (ข้อ 10) -->
-            <div id="shop-select-panel" class="shop-panel hidden">
-                <h2>🛍️ ย่านร้านค้า</h2>
-                <button onclick="openShop('weapon_basic')">ร้านอาวุธเริ่มต้น</button>
-                <button onclick="openShop('weapon_common')">ร้านอาวุธทั่วไป</button>
-                <button onclick="openShop('weapon_magic')">ร้านเครื่องมือเวทย์</button>
-                <button onclick="openShop('weapon_high')">ร้านอาวุธระดับสูง</button>
-                <button onclick="openShop('armor')">ร้านอุปกรณ์/เกราะ</button>
-                <button onclick="openShop('general')">ร้านจิปาถะ</button>
-                <hr>
-                <button onclick="showMapUI('building')">กลับย่านอาคาร</button>
-            </div>
-            
-            <!-- 2.1.7 หน้าจอ ร้านค้า (แสดงไอเทม) (ข้อ 11) -->
-            <div id="shop-item-panel" class="shop-panel hidden">
-                <h2 id="shop-title">...</h2>
-                <div id="shop-item-list">
-                    <!-- Javascript/map.js จะเติมไอเทมที่นี่ -->
-                    <p>กำลังโหลดสินค้า...</p>
-                </div>
-                <hr>
-                <button onclick="showBuildingUI('shops')">กลับไปย่านร้านค้า</button>
+                <button id="btn-join-colosseum" class="panel-btn" onclick="toggleColosseumStatus()">📝 ลงทะเบียน</button>
+                <button class="panel-btn" onclick="showMapUI('city')">⬅️ ออก</button>
             </div>
 
         </div>
@@ -263,22 +355,96 @@
             <iframe id="dashboard-iframe" src="player-dashboard.html"></iframe>
         </div>
 
-    </div> <!-- #content-area -->
+    </div>
 
-    <!-- [สำคัญ] โหลด Scripts (v2) -->
+    <button id="btn-dm-tools" onclick="toggleDMTools()" 
+        style="display:none; 
+            position:fixed; 
+            top: 85px; right: 20px; z-index: 9999;
+            width: 50px !important;  /* บังคับความกว้าง */
+            height: 50px !important; /* บังคับความสูง */
+            border-radius: 50%;      /* ทำเป็นวงกลม */
+            padding: 0;
+            background: linear-gradient(135deg, #d63031, #e17055); 
+            color: white; 
+            border: 2px solid rgba(255,255,255,0.5);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            font-size: 24px;
+            cursor: pointer; 
+            transition: transform 0.2s;">
+        🛠️
+    </button>
+
+    <div id="dm-tools-panel" class="map-panel" 
+        style="position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); 
+                width:90%; max-width:450px; z-index:10000; border:1px solid #e17055;
+                box-shadow: 0 0 50px rgba(0,0,0,0.8);">
+        
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">
+            <h3 style="margin:0; color:#e17055;">🛠️ DM Control</h3>
+            <button onclick="toggleDMTools()" style="background:none; border:none; color:#aaa; font-size:1.5em; width:auto; cursor:pointer;">&times;</button>
+        </div>
+
+        <div style="display:flex; gap:5px; margin-bottom:15px;">
+            <button onclick="switchDMTab('shop')" class="panel-btn" style="margin:0; font-size:0.8em; text-align:center;">🛒 เติมของ</button>
+            <button onclick="switchDMTab('quest')" class="panel-btn" style="margin:0; font-size:0.8em; text-align:center;">📜 เพิ่มเควส</button>
+            <button onclick="switchDMTab('misc')" class="panel-btn" style="margin:0; font-size:0.8em; text-align:center;">⚡ อื่นๆ</button>
+        </div>
+
+        <div id="dm-tab-shop">
+            <select id="dmShopSelect" class="dm-input">
+                <option value="general">ร้านจิปาถะ</option>
+                <option value="weapon_basic">อาวุธเริ่มต้น</option>
+                <option value="weapon_common">อาวุธทั่วไป</option>
+                <option value="weapon_magic">เครื่องมือเวทย์</option>
+                <option value="weapon_high">อาวุธระดับสูง</option>
+                <option value="armor">ร้านเกราะ</option>
+            </select>
+            <input type="text" id="dmItemName" placeholder="ชื่อไอเทม" class="dm-input">
+            <div style="display:flex; gap:5px;">
+                <input type="number" id="dmItemPrice" placeholder="ราคา" class="dm-input">
+                <select id="dmItemType" class="dm-input">
+                    <option value="ทั่วไป">ทั่วไป</option>
+                    <option value="บริโภค">บริโภค</option>
+                    <option value="อาวุธ">อาวุธ</option>
+                    <option value="สวมใส่">สวมใส่</option>
+                </select>
+            </div>
+            <input type="text" id="dmItemStats" placeholder="Stat (เช่น STR:2, HP:10)" class="dm-input">
+            <button onclick="dmAddItem()" class="panel-btn" style="background:#28a745; text-align:center; margin-top:10px;">➕ เพิ่มสินค้า</button>
+        </div>
+
+        <div id="dm-tab-quest" class="hidden">
+            <input type="text" id="dmQuestTitle" placeholder="ชื่อเควส" class="dm-input">
+            <textarea id="dmQuestDesc" placeholder="รายละเอียด..." class="dm-input" rows="3"></textarea>
+            <div style="display:flex; gap:5px;">
+                <select id="dmQuestClass" class="dm-input">
+                    <option value="นักรบ">นักรบ</option>
+                    <option value="นักเวท">นักเวท</option>
+                    <option value="โจร">โจร</option>
+                    <option value="นักบวช">นักบวช</option>
+                    <option value="เรนเจอร์">เรนเจอร์</option>
+                </select>
+                <input type="number" id="dmQuestLevel" placeholder="Lv. ขั้นต่ำ" class="dm-input" value="10">
+            </div>
+            <button onclick="dmAddQuest()" class="panel-btn" style="background:#0984e3; text-align:center; margin-top:10px;">➕ ประกาศเควส</button>
+        </div>
+
+        <div id="dm-tab-misc" class="hidden">
+            <button onclick="dmHealAll()" class="panel-btn" style="background:#00cec9; text-align:center; margin-bottom:5px;">❤️ ฟื้นฟูทุกคน (Full Heal)</button>
+            <button onclick="dmGiveMoney()" class="panel-btn" style="background:#fdcb6e; color:#000; text-align:center; margin-bottom:5px;">💰 แจกเงิน (+100 GP)</button>
+            <button onclick="dmClearEnemies()" class="panel-btn" style="background:#d63031; text-align:center;">💀 ล้างมอนสเตอร์ทั้งหมด</button>
+        </div>
+    </div>
+
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-    
     <script src="Javascript/firebase-init.js"></script>
     <script src="Javascript/ui-helpers.js"></script>
-    
-    <!-- โหลดฐานข้อมูลกฎ (v2) -->
     <script src="Javascript/skills-data.js"></script> 
-    <!-- โหลดตรรกะคำนวณ (v2) -->
     <script src="Javascript/charector.js"></script>   
-    
-    <!-- โหลดตรรกะของหน้านี้ (ไฟล์ถัดไป) -->
     <script src="Javascript/map.js"></script>
+
 </body>
 </html>

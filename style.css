@@ -4,6 +4,19 @@
 === ธีมหลัก (Base Theme) ===
 ================================================================================= */
 
+* {
+    box-sizing: border-box;
+}
+
+.grid-container {
+    display: grid;
+    /* ใช้ minmax เพื่อให้ด้านซ้ายไม่เล็กเกิน และด้านขวายืดตาม */
+    grid-template-columns: minmax(300px, 1fr) 2fr; 
+    gap: 20px;
+    width: 100%;
+    max-width: 100%;
+}
+
 /* พื้นหลังหลัก */
 body {
     font-family: 'Cinzel', serif;
@@ -374,4 +387,209 @@ td input {
 }
 .btn-delete-room {
     background: #dc3545;
+}
+
+
+/* =================================================================================
+   === ⚔️ LOBBY REDESIGN (V.2 Dark Glass) - วางต่อท้ายไฟล์ style.css ===
+   ================================================================================= */
+
+/* ปรับแต่ง Grid ใน Lobby ให้สัดส่วนดีขึ้น */
+.lobby-grid {
+    display: grid;
+    grid-template-columns: 320px 1fr; /* ซ้ายเมนูคงที่ / ขวารายการห้องยืด */
+    gap: 25px;
+    max-width: 1400px;
+    margin: 0 auto;
+    align-items: start;
+}
+
+/* เปลี่ยน Panel ทึบๆ ให้เป็นกระจก (Glass) */
+.glass-panel {
+    background: rgba(15, 15, 20, 0.85); /* สีดำโปร่งแสง */
+    /*backdrop-filter: blur(15px);        เบลอฉากหลัง */
+    border: 1px solid rgba(255, 183, 0, 0.2); /* ขอบทองจางๆ */
+    border-radius: 12px;
+    padding: 25px;
+    box-shadow: 0 15px 40px rgba(0,0,0,0.6);
+}
+
+/* หัวข้อใน Panel */
+.panel-title {
+    font-family: 'Cinzel', serif;
+    color: #ffb700;
+    font-size: 1.4em;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+    text-align: center;
+    letter-spacing: 1px;
+    text-shadow: 0 0 10px rgba(255, 183, 0, 0.3);
+}
+
+/* --- ส่วน Header ด้านบน (User Info) --- */
+.lobby-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 30px;
+    background: rgba(20, 20, 25, 0.9);
+    border: 1px solid rgba(255, 183, 0, 0.3);
+    border-radius: 50px; /* ทำให้มนโค้ง */
+    box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+    margin-bottom: 30px;
+    backdrop-filter: blur(10px);
+}
+
+.user-info { display: flex; align-items: center; gap: 15px; }
+.user-avatar { 
+    width: 45px; height: 45px; border-radius: 50%; 
+    border: 2px solid #ffb700; box-shadow: 0 0 10px #ffb700; object-fit: cover;
+}
+
+/* ปุ่มเมนูข้างบน */
+.nav-btn {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #ccc;
+    padding: 8px 15px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: 0.3s;
+    font-size: 0.9em;
+    width: auto; /* แก้ไม่ให้ปุ่มยืดเต็มจอ */
+    margin: 0 3px;
+    box-shadow: none;
+}
+.nav-btn:hover {
+    background: rgba(255, 183, 0, 0.2);
+    color: #ffb700;
+    border-color: #ffb700;
+}
+.btn-logout { border-color: #d9534f; color: #ff6b6b; }
+.btn-logout:hover { background: #d9534f; color: white; }
+
+/* --- ช่องกรอกข้อมูล (Input) สไตล์ใหม่ --- */
+.glass-input {
+    width: 100%;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.15);
+    padding: 12px 15px;
+    border-radius: 8px;
+    color: white;
+    margin-bottom: 12px;
+    transition: 0.3s;
+}
+.glass-input:focus {
+    border-color: #ffb700;
+    box-shadow: 0 0 10px rgba(255, 183, 0, 0.2);
+    background: rgba(0,0,0,0.6);
+}
+
+/* --- ปุ่ม Action ใหญ่ (สร้าง/เข้าร่วม) --- */
+.action-btn {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.3s;
+    font-family: 'Prompt', sans-serif;
+    margin-top: 5px;
+    color: white;
+    text-shadow: none;
+}
+.btn-create { background: linear-gradient(135deg, #00c6ff, #0072ff); }
+.btn-create:hover { box-shadow: 0 0 20px rgba(0, 114, 255, 0.6); transform: translateY(-2px); }
+
+.btn-join { background: linear-gradient(135deg, #11998e, #38ef7d); }
+.btn-join:hover { box-shadow: 0 0 20px rgba(56, 239, 125, 0.6); transform: translateY(-2px); }
+
+/* --- รายการห้อง (Server List) แก้ให้สวยและปุ่มเล็ก --- */
+#publicRoomsList {
+    list-style: none; padding: 0; margin: 0;
+    max-height: 600px; overflow-y: auto;
+    padding-right: 5px;
+}
+
+/* การ์ดห้อง */
+.room-card {
+    display: flex; 
+    justify-content: space-between; /* ชื่อซ้าย ปุ่มขวา */
+    align-items: center;
+    background: linear-gradient(90deg, rgba(255,255,255,0.03), transparent);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-left: 4px solid #ffb700; /* แถบสีทอง */
+    border-radius: 6px;
+    padding: 12px 20px;
+    margin-bottom: 10px;
+    transition: all 0.2s ease;
+}
+.room-card:hover {
+    background: linear-gradient(90deg, rgba(255, 183, 0, 0.15), transparent);
+    transform: translateX(5px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+    border-left-color: #fff;
+}
+
+/* ข้อมูลห้อง */
+.room-info h4 { 
+    margin: 0 0 5px 0; 
+    font-size: 1.1em; 
+    color: #fff; 
+    font-weight: 600; 
+    display: flex; align-items: center; gap: 8px;
+}
+.room-meta { font-size: 0.85em; color: #aaa; }
+.room-id { 
+    background: rgba(0,0,0,0.5); 
+    padding: 2px 6px; 
+    border-radius: 4px; 
+    font-family: monospace; 
+    color: #ffb700;
+    margin-left: 5px;
+}
+
+/* ปุ่ม Admin (แบบไอคอนเล็ก) */
+.admin-actions {
+    display: flex; gap: 8px;
+}
+.btn-icon {
+    width: 32px; height: 32px;
+    border-radius: 6px;
+    border: none;
+    color: white;
+    cursor: pointer;
+    display: flex; justify-content: center; align-items: center;
+    font-size: 1em;
+    transition: 0.2s;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    margin: 0; /* แก้ margin */
+}
+.btn-reveal { background: rgba(23, 162, 184, 0.2); border: 1px solid #17a2b8; color: #17a2b8; }
+.btn-reveal:hover { background: #17a2b8; color: white; }
+
+.btn-delete { background: rgba(220, 53, 69, 0.2); border: 1px solid #dc3545; color: #dc3545; }
+.btn-delete:hover { background: #dc3545; color: white; }
+
+.lobby-header {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+input, select, textarea, button {
+    width: 100%;
+    max-width: 100%; /* กันเหนียว */
+    box-sizing: border-box; /* สำคัญที่สุด */
+}
+
+@media (max-width: 768px) {
+    .grid-container {
+        grid-template-columns: 1fr; /* เรียงเป็นแถวเดียว */
+    }
+    body {
+        padding: 10px; /* ลดขอบจอในมือถือ */
+    }
 }
