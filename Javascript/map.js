@@ -12,144 +12,6 @@ const calcHPFn = typeof calculateHP === 'function' ? calculateHP : () => { conso
 const getStatBonusFn = typeof getStatBonus === 'function' ? getStatBonus : () => { console.error("getStatBonus not found!"); return 0; };
 
 
-function calculateTotalStat(charData, statKey) {
-    if (!charData || !charData.stats) return 0;
-    
-    const stats = charData.stats;
-    const upperStatKey = statKey.toUpperCase();
-    
-    // 1. คำนวณ Level (ถาวร + ชั่วคราว)
-    const permanentLevel = charData.level || 1;
-    let tempLevel = 0;
-    if (Array.isArray(charData.activeEffects)) {
-         charData.activeEffects.forEach(effect => {
-             if ((effect.stat === 'Level' && effect.modType === 'FLAT') || effect.type === 'TEMP_LEVEL_PERCENT') {
-                 if(effect.type === 'TEMP_LEVEL_PERCENT') {
-                     tempLevel += Math.floor(permanentLevel * (effect.amount / 100));
-                 } else {
-                     tempLevel += (effect.amount || 0);
-                 }
-             }
-         });
-    }
-    const totalLevel = permanentLevel + tempLevel;
-
-    // 2. คำนวณ Base Stat (เผ่า + ที่อัป + บัฟ God Mode จาก DM)
-    let baseStat = (stats.baseRaceStats?.[upperStatKey] || 0) +
-                   (stats.investedStats?.[upperStatKey] || 0) +
-                   (stats.tempStats?.[upperStatKey] || 0);
-
-    // [ v3.1 ] เพิ่มโบนัสจากอาชีพหลักและอาชีพรอง
-    const classMainData = (typeof CLASS_DATA !== 'undefined') ? CLASS_DATA[charData.classMain] : null;
-    const classSubData = (typeof CLASS_DATA !== 'undefined') ? CLASS_DATA[charData.classSub] : null;
-    
-    if (classMainData && classMainData.bonuses) {
-        baseStat += (classMainData.bonuses[upperStatKey] || 0);
-    }
-    if (classSubData && classSubData.bonuses) {
-        baseStat += (classSubData.bonuses[upperStatKey] || 0);
-    }
-
-    // 3. [v3] คำนวณโบนัสจากสกิลติดตัว (Passive Skills)
-    const raceId = charData.raceEvolved || charData.race;
-    const racePassives = (typeof RACE_DATA !== 'undefined' && RACE_DATA[raceId]?.passives) ? RACE_DATA[raceId].passives : [];
-    
-    const classMainId = charData.classMain;
-    const classPassives = (typeof CLASS_DATA !== 'undefined' && CLASS_DATA[classMainId]?.passives) ? CLASS_DATA[classMainId].passives : [];
-    
-    const classSubId = charData.classSub;
-    const subClassPassives = (typeof CLASS_DATA !== 'undefined' && CLASS_DATA[classSubId]?.passives) ? CLASS_DATA[classSubId].passives : [];
-    
-    const skillPassives = [];
-    if (typeof SKILL_DATA !== 'undefined') {
-        // [ ⭐️ แก้ไข Bug 4 (เหมือน player-dashboard) ⭐️ ]
-        if(SKILL_DATA[classMainId]) {
-            skillPassives.push(...SKILL_DATA[classMainId].filter(s => s.skillTrigger === 'PASSIVE'));
-        }
-        if(SKILL_DATA[classSubId]) {
-            skillPassives.push(...SKILL_DATA[classSubId].filter(s => s.skillTrigger === 'PASSIVE'));
-        }
-    }
-
-    const allPassives = [...racePassives, ...classPassives, ...subClassPassives, ...skillPassives];
-    
-    allPassives.forEach(passiveOrSkill => {
-        // [ ⭐️ แก้ไข Bug 4 (เหมือน player-dashboard) ⭐️ ]
-        let effectObject = null;
-        if (passiveOrSkill.skillTrigger === 'PASSIVE') {
-            effectObject = passiveOrSkill.effect;
-        } else if (passiveOrSkill.id && passiveOrSkill.effect) {
-            effectObject = passiveOrSkill.effect;
-        }
-
-        if (effectObject) {
-            const effects = Array.isArray(effectObject) ? effectObject : [effectObject];
-            
-            effects.forEach(p => {
-                if (p && p.type === 'PASSIVE_STAT_PERCENT' && p.stats?.includes(upperStatKey)) {
-                    baseStat *= (1 + (p.amount / 100));
-                }
-                if (p && p.type === 'PASSIVE_STAT_FLAT' && p.stats?.includes(upperStatKey)) {
-                    baseStat += p.amount;
-                }
-            });
-        }
-    });
-
-    // 4. คำนวณโบนัสจากบัฟ/ดีบัฟชั่วคราว (Active Effects)
-    let flatBonus = 0;
-    let percentBonus = 0;
-
-    if (Array.isArray(charData.activeEffects)) {
-        charData.activeEffects.forEach(effect => {
-            if (effect.stat === upperStatKey || effect.stat === 'ALL') {
-                if (effect.modType === 'FLAT') flatBonus += (effect.amount || 0);
-                else if (effect.modType === 'PERCENT') percentBonus += (effect.amount || 0);
-            }
-        });
-    }
-    
-    // 5. [v3] คำนวณโบนัสจากออร่า (ข้ามส่วนนี้ใน map.js)
-    // (allPlayersInRoom is not available here)
-
-    // 6. คำนวณโบนัสจากอุปกรณ์ (Equipped Items)
-    let equipBonus = 0;
-    if (charData.equippedItems) {
-        for (const slot in charData.equippedItems) {
-            const item = charData.equippedItems[slot];
-            if (!item || !item.bonuses || item.bonuses[upperStatKey] === undefined) continue;
-
-            let itemStatBonus = item.bonuses[upperStatKey] || 0;
-            
-            if (item.itemType === 'อาวุธ') {
-                if (slot === 'mainHand') {
-                    if (item.isProficient) itemStatBonus *= 1.015;
-                } else if (slot === 'offHand') {
-                    itemStatBonus *= 0.70;
-                }
-            }
-            equipBonus += itemStatBonus;
-        }
-    }
-
-    // 7. รวมค่าสถานะ
-    let finalStat = (baseStat * (1 + (percentBonus / 100))) + flatBonus + equipBonus;
-
-    // 8. คำนวณโบนัสจาก Level
-    if (finalStat > 0 && totalLevel > 1) {
-         const levelBonus = finalStat * (totalLevel - 1) * 0.2;
-         finalStat += levelBonus;
-    }
-   
-    // 9. [v3] ตรวจสอบเงื่อนไขพิเศษ
-    if (charData.race === 'โกเลม' && upperStatKey === 'DEX') {
-        return 0;
-    }
-
-    return Math.floor(finalStat);
-}
-
-
 // =================================================================================
 // 1. UI Management (ข้อ 9)
 // (ส่วนนี้ไม่มีบั๊ก คงเดิม)
@@ -900,6 +762,107 @@ function selectMap(type) {
     document.getElementById('main-menu-panel').classList.remove('active');
     document.getElementById('btn-main-menu').classList.remove('active');
 }
+
+// ==========================================================
+// --- [NEW] ระบบกระดานเควสกิลด์ (Guild Board System) ---
+// ==========================================================
+
+// 1. ดึงข้อมูลเควสจาก DM มาไว้ที่กิลด์แบบ Real-time
+firebase.auth().onAuthStateChanged(user => {
+    if(user) {
+        const roomId = sessionStorage.getItem('roomId');
+        db.ref(`rooms/${roomId}/guildQuests`).on('value', snap => {
+            guildQuests = snap.val() || {};
+            renderGuildBoard(); // โหลดกระดานใหม่ทุกครั้งที่ DM อัปเดตเควส
+        });
+    }
+});
+
+// 2. ฟังก์ชันวาด UI กระดานเควส
+function renderGuildBoard() {
+    // ต้องมี div id="guildContent" อยู่ในหน้า HTML ของกิลด์ (ถ้าไม่มีระบบจะข้ามไป)
+    const guildContainer = document.getElementById('guildContent');
+    if (!guildContainer || !playerData) return;
+
+    let html = '<h3 style="color:#ffc107; border-bottom:1px solid #555; padding-bottom:5px;">📜 กระดานภารกิจกิลด์</h3>';
+
+    // เช็คว่าผู้เล่นมีเควสที่ "รับมาแล้ว" ไหม
+    if (playerData.activeQuest) {
+        let q = playerData.activeQuest;
+        html += `<div style="background:rgba(255, 174, 0, 0.1); border:1px solid #ffae00; padding:15px; margin-bottom:20px; border-radius:8px;">`;
+        html += `<h4 style="margin:0 0 10px 0;">[กำลังทำ] ${q.title}</h4>`;
+        html += `<p>เป้าหมาย: ล่า <b>${q.targetMonster}</b> (${q.currentCount}/${q.requiredCount})</p>`;
+        
+        if (q.currentCount >= q.requiredCount) {
+            html += `<p style="color:#28a745; font-weight:bold;">✨ ภารกิจสำเร็จแล้ว!</p>`;
+            html += `<button onclick="submitGuildQuest()" style="background: linear-gradient(90deg, #28a745, #1e7e34); width:100%;">✅ ส่งเควส & เลื่อนขั้นเป็น [${q.rewardClass}]</button>`;
+        } else {
+            html += `<p style="color:#ff4d4d;">ออกเดินทางไปตามล่าเป้าหมายในแผนที่!</p>`;
+            html += `<button onclick="cancelGuildQuest()" style="background:#dc3545; width:auto; padding:5px 10px; font-size:0.8em;">❌ ยกเลิกเควส</button>`;
+        }
+        html += `</div>`;
+    }
+
+    // รายการเควสบนกระดานที่ DM แปะไว้
+    html += `<h4>ภารกิจที่เปิดรับในกิลด์:</h4>`;
+    let hasAvailable = false;
+    for (let qId in guildQuests) {
+        let q = guildQuests[qId];
+        html += `
+        <div style="background:rgba(0,0,0,0.5); border:1px solid #444; padding:10px; margin-bottom:10px; border-radius:5px;">
+            <strong style="color:#1cb5e0; font-size:1.1em;">${q.title}</strong><br>
+            <span style="font-size:0.9em; color:#ddd;">🎯 เป้าหมาย: ล่า <b>${q.targetMonster}</b> จำนวน ${q.requiredCount} ตัว</span><br>
+            <span style="font-size:0.9em; color:#ddd;">🎁 รางวัล: เลื่อนขั้นเป็น <b>${q.rewardClass}</b></span><br>
+            ${!playerData.activeQuest ? `<button onclick="acceptGuildQuest('${qId}')" style="margin-top:8px; padding:5px; background:#007bff;">📝 รับภารกิจนี้</button>` : ''}
+        </div>`;
+        hasAvailable = true;
+    }
+    
+    if (!hasAvailable) html += `<p style="color:#aaa; text-align:center;">-- ตอนนี้ไม่มีเควสบนกระดาน --</p>`;
+    guildContainer.innerHTML = html;
+}
+
+// 3. ฟังก์ชันรับเควส
+async function acceptGuildQuest(questId) {
+    if (playerData.activeQuest) return showCustomAlert("คุณมีเควสที่กำลังทำอยู่แล้ว!", "warning");
+    
+    let questToAccept = guildQuests[questId];
+    questToAccept.currentCount = 0; // รีเซ็ตตัวนับเป็น 0
+    
+    await db.ref(`rooms/${roomId}/playersByUid/${currentUserUid}/activeQuest`).set(questToAccept);
+    showCustomAlert("รับภารกิจแล้ว! ออกเดินทางได้เลย", "success");
+}
+
+// 4. ฟังก์ชันส่งเควส & เลื่อนขั้นอาชีพ
+async function submitGuildQuest() {
+    let q = playerData.activeQuest;
+    if (q && q.currentCount >= q.requiredCount) {
+        // อัปเดตอาชีพใหม่ และ ลบเควสออกจากตัว
+        await db.ref(`rooms/${roomId}/playersByUid/${currentUserUid}`).update({
+            classMain: q.rewardClass,
+            activeQuest: null
+        });
+
+        // ประกาศความยิ่งใหญ่ลง Log ของห้อง
+        db.ref(`rooms/${roomId}/combatLogs`).push({
+            message: `🎉 <b>ประกาศจากกิลด์:</b> [${playerData.name}] ส่งเควสสำเร็จและเลื่อนขั้นเป็นอาชีพ <b>${q.rewardClass}</b> แล้ว!`,
+            timestamp: Date.now()
+        });
+
+        Swal.fire('ยินดีด้วย!', `คุณผ่านการทดสอบ! ตอนนี้คุณคือ [${q.rewardClass}] แล้ว!`, 'success');
+    }
+}
+
+// 5. ฟังก์ชันยกเลิกเควส
+async function cancelGuildQuest() {
+    await db.ref(`rooms/${roomId}/playersByUid/${currentUserUid}/activeQuest`).remove();
+    showCustomAlert("ยกเลิกภารกิจแล้ว", "info");
+}
+
+
+
+
+
 
 // (Optional) คลิกที่อื่นเพื่อปิดเมนู
 window.addEventListener('click', function(e) {

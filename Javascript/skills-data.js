@@ -1,3 +1,17 @@
+const E = {
+    PHYSICAL: 0,
+    FIRE: 1,
+    WATER: 2,
+    ELECTRIC: 3,
+    EARTH: 4,
+    WIND: 5,
+    ICE: 6,
+    LIGHT: 7,
+    DARK: 8,
+    WOOD: 9
+};
+
+
 
 const RACE_DATA = {
     // --- เผ่าพันธุ์พื้นฐาน ---
@@ -1396,87 +1410,195 @@ const SKILL_DATA = {
  * -----------------------------------------------------------------
  */
 const ELEMENT_REACTIONS = {
-    // 1. ปฏิกิริยาขยายความเสียหาย (Amplifying Reactions)
-    'FIRE': { // (สถานะที่ติดตัว)
-        'WATER': { effect: 'Vaporize', multiplier: 1.5, clears: 'FIRE' }, // (ตัวชนวน)
-        'ICE': { effect: 'Melt', multiplier: 1.5, clears: 'FIRE' }
+    /* sum = (e1*100) + e2
+     sum = (e1*10000) + (e2*100) + e3  // (ถ้ามี 3 ธาตุผสมกัน)
+     --- กลุ่มระเหย (Vaporize) ---*/
+     
+    // ไฟ (1) อยู่บนตัว -> โดนน้ำ (2) ยิงใส่ :: Key = (1 * 100) + 2 = 102
+    [102]: { name: 'ระเหย (รุนแรง)', multiplier: 2.0, clears: true },
+
+    // น้ำ (2) อยู่บนตัว -> โดนไฟ (1) ยิงใส่ :: Key = (2 * 100) + 1 = 201
+    [201]: { name: 'ระเหย', multiplier: 1.5, clears: true },
+
+    // --- กลุ่มละลาย (Melt) ---
+    // น้ำแข็ง (32) อยู่บนตัว -> โดนไฟ (1) ยิงใส่ :: Key = (32 * 100) + 1 = 3201
+    [601]: { name: 'ละลาย (รุนแรง)', multiplier: 2.0, clears: true },
+
+    // ไฟ (1) อยู่บนตัว -> โดนน้ำแข็ง (32) ยิงใส่ :: Key = (1 * 100) + 32 = 132
+    [106]: { name: 'ละลาย', multiplier: 1.5, clears: true },
+
+    // --- กลุ่มโอเวอร์โหลด (Overload) ---
+    // ไฟ (1) + สายฟ้า (4) หรือ สายฟ้า (4) + ไฟ (1) -> ระเบิดเหมือนกัน
+    [103]: { name: 'โอเวอร์โหลด', multiplier: 1.75, aoe: true, clears: true }, 
+    [301]: { name: 'โอเวอร์โหลด', multiplier: 1.75, aoe: true, clears: true }, 
+
+    // --- กลุ่มช็อตไฟฟ้า (Electro-Charged) ---
+    // น้ำ (2) + สายฟ้า (4) หรือ สายฟ้า (4) + น้ำ (2) -> โดนดาเมจไฟฟ้า
+    [203]: { name: 'ช็อตไฟฟ้า', multiplier: 1.5, dotElement: 'LIGHTNING', damageDice: 'd10', dotMultiplier: 1.25, turns: 6, clears: false }, // (2*100)+4
+    [302]: { name: 'ช็อตไฟฟ้า', multiplier: 1.5, dotElement: 'LIGHTNING', damageDice: 'd10', dotMultiplier: 1.25, turns: 6, clears: false }, // (4*100)+2
+    
+    // --- กลุ่มผลึกแข็ง (Crystallize) ---
+    [401]: { name: 'ผลึกแข็ง (ไฟ)', grantShield: true, shieldElement: 'FIRE', clears: true },
+    [104]: { name: 'ผลึกแข็ง (ไฟ)', grantShield: true, shieldElement: 'FIRE', clears: true },
+
+    // ดิน (4) + น้ำ (2) = 402, 204
+    [402]: { name: 'ผลึกแข็ง (น้ำ)', grantShield: true, shieldElement: 'WATER', clears: true },
+    [204]: { name: 'ผลึกแข็ง (น้ำ)', grantShield: true, shieldElement: 'WATER', clears: true },
+
+    // ดิน (4) + สายฟ้า (3) = 403, 304
+    [403]: { name: 'ผลึกแข็ง (สายฟ้า)', grantShield: true, shieldElement: 'ELECTRIC', clears: true },
+    [304]: { name: 'ผลึกแข็ง (สายฟ้า)', grantShield: true, shieldElement: 'ELECTRIC', clears: true },
+
+    // ดิน (4) + น้ำแข็ง (6) = 406, 604
+    [406]: { name: 'ผลึกแข็ง (น้ำแข็ง)', grantShield: true, shieldElement: 'ICE', clears: true },
+    [604]: { name: 'ผลึกแข็ง (น้ำแข็ง)', grantShield: true, shieldElement: 'ICE', clears: true },
+
+    // ดิน (4) + ไม้ (9) = 409, 904
+    [409]: { name: 'ผลึกแข็ง (ไม้)', grantShield: true, shieldElement: 'WOOD', clears: true },
+    [904]: { name: 'ผลึกแข็ง (ไม้)', grantShield: true, shieldElement: 'WOOD', clears: true },
+
+    // ดิน (4) + มืด (8) = 408, 804
+    [408]: { name: 'ผลึกแข็ง (มืด)', grantShield: true, shieldElement: 'DARK', clears: true },
+    [804]: { name: 'ผลึกแข็ง (มืด)', grantShield: true, shieldElement: 'DARK', clears: true },
+
+    // ดิน (4) + แสง (7) = 407, 704
+    [407]: { name: 'ผลึกแข็ง (แสง)', grantShield: true, shieldElement: 'HOLY', clears: true },
+    [704]: { name: 'ผลึกแข็ง (แสง)', grantShield: true, shieldElement: 'HOLY', clears: true },
+
+    // ดิน (4) + พิษ (10) = 410, 1004
+    [410]: { name: 'ผลึกแข็ง (พิษ)', grantShield: true, shieldElement: 'POISON', clears: true },
+    [1004]: { name: 'ผลึกแข็ง (พิษ)', grantShield: true, shieldElement: 'POISON', clears: true },
+
+    // ดิน (4) + ลม (5) = 405, 504
+    [405]: { name: 'ผลึกแข็ง (ลม)', grantShield: true, shieldElement: 'WIND', clears: true },
+    [504]: { name: 'ผลึกแข็ง (ลม)', grantShield: true, shieldElement: 'WIND', clears: true },
+
+
+    // --- กลุ่มเผาไหม้ (Burning) ---
+    // ไฟ (1) + ไม้ (9) หรือ ไม้ (9) + ไฟ (1) -> โดนดาเมจไฟ
+    [109]: { name: 'เผาไหม้', multiplier: 1.2, dotElement: 'FIRE', damageDice: 'd6', tickOn: 'GLOBAL', clears: true }, // (1*100)+5
+    [901]: { name: 'เผาไหม้', multiplier: 1.2, dotElement: 'FIRE', damageDice: 'd6', tickOn: 'GLOBAL', clears: true },  // (5*100)+1
+
+    // --- กลุ่มงอกเงย (Bloom) ---
+    // ไม้ (9) + น้ำ (2) หรือ น้ำ (2) + ไม้ (9) -> สร้างดอกไม้ฟื้นฟู
+    [209]: { name: 'งอกเงย', multiplier: 1.3, clears: false }, // (2*100)+5
+    [902]: { name: 'งอกเงย', multiplier: 1.3, clears: false },  // (5*100)+2
+
+    [90203]: { // (ไม้บนตัว + น้ำ + สายฟ้า)
+        name: 'Hyperbloom',
+        multiplier: 3,
+        clears: true,
     },
-    'WATER': {
-        'FIRE': { effect: 'Major Vaporize', multiplier: 2.0, clears: 'WATER' }
+    [20903]: { // (น้ำบนตัว + ไม้ + สายฟ้า)
+        name: 'Hyperbloom',
+        multiplier: 3,
+        clears: true,
     },
-    'ICE': {
-        'FIRE': { effect: 'Major Melt', multiplier: 2.0, clears: 'ICE' }
+    [90302]: { // (สายฟ้าบนตัว + น้ำ + ไม้)
+        name: 'แพร่ขายขั้นสูง',
+        multiplier: 2.5,
+        damageDice: 'd5',
+        dotElement: 'LIGHTNING',
+
+        clears: true,
+    },
+    [30209]: { // (สายฟ้าบนตัว + ไม้ + น้ำ)
+        name: 'แพร่ขายบลูม]',
+        multiplier: 2.5,
+        dotElement: 'LIGHTNING',
+        damageDice: 'd5',
+        clears: true,
+    },
+    [20901]: {
+        name: 'ระเบิดชีวภาพ',
+        multiplier: 2.0,
+        clears: true,
+    },
+    [90201]: {
+        name: 'ระเบิดชีวภาพ',
+        multiplier: 2.0,
+        clears: true,
+    },
+    [90207]: {
+        name: 'ระเบิดชีวภาพแห่งแสง',
+        multiplier: 5.0,
+        clears: true,
+    },
+    [20907]: {
+        name: 'ระเบิดชีวภาพแห่งแสง',
+        multiplier: 5.0,
+        clears: true,
+    },
+    [70209]: {
+        name: 'เถาวัลย์แห่งแสง',
+        multiplier: 4.0,
+        clears: true,
     },
 
-    // 2. ปฏิกิริยาเปลี่ยนแปลง (Transformative Reactions)
-    'WATER+ICE': { effect: 'Freeze', status: 'FROZEN', durationDice: 'd4', clears: ['WATER', 'ICE'] },
-    'FROZEN': { // (สถานะพิเศษ)
-        'PHYSICAL': { effect: 'Shatter', trueDamageDice: '4d10', clears: 'FROZEN' },
-        'EARTH': { effect: 'Shatter', trueDamageDice: '4d10', clears: 'FROZEN' },
-        'LIGHTNING': { effect: 'Shatter', trueDamageDice: '4d10', clears: 'FROZEN' }
+
+    // --- กลุ่มเน่าเปื่อย (Decay) ---
+    // พิษ (10) + ไม้ (9) หรือ ไม้ (9) + พิษ (10) -> โดนดาเมจพิษ
+    [1009]: { name: 'เน่าเปื่อย', multiplier: 1.2, dotElement: 'POISON', damageDice: 'd8', tickOn: 'GLOBAL', clears: true }, // (9*100)+5
+    [910]: { name: 'เน่าเปื่อย', multiplier: 1.2, dotElement: 'POISON', damageDice: 'd8', tickOn: 'GLOBAL', clears: true },  // (5*100)+9
+
+    // --- กลุ่มคอมโบธาตุแสง (Light Combos) ---
+    [701]: { name: 'ไฟแห่งแสง', multiplier: 2.5, aoe: false, clears: true }, // (8*100)+8
+    [107]: { name: 'เปลวไฟแห่งแสง', multiplier: 5, aoe: false, clears: true }, // (8*100)+10
+    [702]: { name: 'น้ำแห่งแสง', multiplier: 2.5, aoe: false, clears: true }, // (8*100)+2
+    [207]: { name: 'คลื่นน้ำแห่งแสง', multiplier: 5, aoe: false, clears: true }, // (8*100)+20
+    [703]: { name: 'สายฟ้าแห่งแสง', multiplier: 2.5, aoe: false, clears: true }, // (8*100)+4
+    [307]: { name: 'ฟ้าผ่าแห่งแสง', multiplier: 5, aoe: false, clears: true }, // (8*100)+40
+    [705]: { name: 'ลมแห่งแสง', multiplier: 2.5, aoe: false, clears: true }, // (8*100)+10
+    [507]: { name: 'พายุแห่งแสง', multiplier: 5, aoe: false, clears: true }, // (8*100)+100
+    //[704]: { name: 'ดินแห่งแสง', multiplier: 2.5, aoe: false, clears: true }, // (8*100)+4
+    //[407]: { name: 'แผ่นดินไหวศักดิ์ศิทธิ์', multiplier: 5, aoe: false, clears: true }, // (8*100)+400
+    [709]: { name: 'ไม้แห่งแสง', multiplier: 2.5, aoe: false, clears: true }, // (8*100)+5
+    [907]: { name: 'พฤกษาแห่งแสง', multiplier: 5, aoe: false, clears: true }, // (8*100)+500
+    [706]: { name: 'น้ำแข็งแห่งแสง', multiplier: 2.5, aoe: false, clears: true }, // (8*100)+6
+
+    //--- กลุ่มคอมศักดิ์สิทธิ์ (Holy Combos) ---
+    [1101]: { name: 'ไฟศักดิ์สิทธิ์', multiplier: 3.0, aoe: false, clears: true }, // (9*100)+1
+    [1102]: { name: 'น้ำศักดิ์สิทธิ์', multiplier: 3.0, aoe: false, clears: true }, // (9*100)+2
+    [1103]: { name: 'สายฟ้าศักดิ์สิทธิ์', multiplier: 3.0, aoe: false, clears: true }, // (9*100)+3
+    [1105]: { name: 'ลมศักดิ์สิทธิ์', multiplier: 3.0, aoe: false, clears: true }, // (9*100)+5
+    [1106]: { name: 'น้ำแข็งศักดิ์สิทธิ์', multiplier: 3.0, aoe: false, clears: true }, // (9*100)+6
+    [1107]: { name: 'แสงศักดิ์สิทธิ์', multiplier: 3.0, aoe: false, clears: true }, // (9*100)+7
+    [1109]: { name: 'ไม้ศักดิ์สิทธิ์', multiplier: 3.0, aoe: false, clears: true },  // (9*100)+8
+    [110]: {name: 'เปลวไฟศักดิ์สิทธิ์', multiplier: 6.0, aoe: false, clears: true }, // (9*100)+10
+    [211]: {name: 'คลื่นน้ำศักดิ์สิทธิ์', multiplier: 6.0, aoe: false, clears: true }, // (9*100)+20
+    [311]: {name: 'ฟ้าผ่าศักดิ์สิทธิ์', multiplier: 6.0, aoe: false, clears: true }, // (9*100)+40
+    [511]: {name: 'พายุศักดิ์สิทธิ์', multiplier: 6.0, aoe: false, clears: true }, // (9*100)+100
+    //[411]: {name: 'แผ่นดินไหวศักดิ์สิทธิ์', multiplier: 6.0, aoe: false, clears: true }, // (9*100)+400
+    [911]: {name: 'พฤกษาศักดิ์สิทธิ์', multiplier: 6.0, aoe: false, clears: true }, // (9*100)+500
+
+    //--- กลุ่มธาตุขัดแย้ง (Opposing Elements) ---
+    [708]:{
+        name: 'การปะทะกันของแสงและความมืด',
+        multiplier: 0,
+        aoe: false,
+        clears: true,
     },
-    'WATER+LIGHTNING': { effect: 'Electro-Charged', status: 'SHOCKED_DOT', duration: 3, damageDice: 'd6%', clears: ['WATER', 'LIGHTNING'] },
-    'FIRE+LIGHTNING': { effect: 'Overload', aoeElement: 'FIRE', knockback: true, clears: ['FIRE', 'LIGHTNING'] },
-    'ICE+LIGHTNING': { effect: 'Superconduct', aoeElement: 'ICE', debuff: 'DEF_DOWN_40', durationDice: 'd6', clears: ['ICE', 'LIGHTNING'] },
-    'FIRE+WOOD': { effect: 'Ignite', status: 'MAJOR_BURN_DOT', durationDice: 'd4', damageDice: 'd10%', clears: ['FIRE', 'WOOD'] },
-    'WATER+WOOD': { effect: 'Entangle', status: 'ROOTED', durationDice: 'd4', clears: ['WATER', 'WOOD'] },
-    
-    // 3. ปฏิกิริยาเสริมสภาพ (Support Reactions)
-    'WIND': {
-        'FIRE': { effect: 'Swirl (Fire)', spread: 'FIRE', clears: 'FIRE' },
-        'WATER': { effect: 'Swirl (Water)', spread: 'WATER', clears: 'WATER' },
-        'ICE': { effect: 'Swirl (Ice)', spread: 'ICE', clears: 'ICE' },
-        'LIGHTNING': { effect: 'Swirl (Lightning)', spread: 'LIGHTNING', clears: 'LIGHTNING' }
+    [807]:{
+        name: 'การปะทะกันของแสงและความมืด',
+        multiplier: 0,
+        aoe: false,
+        clears: true,
     },
-    'EARTH': {
-        'FIRE': { effect: 'Crystallize (Fire)', shield: 'FIRE', clears: 'FIRE' },
-        'WATER': { effect: 'Crystallize (Water)', shield: 'WATER', clears: 'WATER' },
-        'ICE': { effect: 'Crystallize (Ice)', shield: 'ICE', clears: 'ICE' },
-        'LIGHTNING': { effect: 'Crystallize (Lightning)', shield: 'LIGHTNING', clears: 'LIGHTNING' }
+    [1108]:{
+        name: 'การปะทะกันของพลังศักดิ์สิทธิ์และมืดมิด',
+        multiplier: 0,
+        aoe: false,
+        clears: true,
     },
-    
-    // 4. ปฏิกิริยาพิเศษ (Special Reactions)
-    'LIGHT+DARK': { effect: 'Annihilation', trueDamageDice: '10d20', clears: ['LIGHT', 'DARK'] },
-    'HOLY': {
-        'DARK': { effect: 'Purify', multiplier: 2.0, status: 'SILENCE', durationDice: 'd4', clears: ['HOLY', 'DARK'] }
+    [811]:{
+        name: 'การปะทะกันของพลังศักดิ์สิทธิ์และมืดมิด',
+        multiplier: 0,
+        aoe: false,
+        clears: true,
     },
-    'DARK': {
-        'HOLY': { effect: 'Exorcise', multiplier: 2.0, debuff: 'WEAKNESS_25', durationDice: 'd4', clears: ['DARK', 'HOLY'] }
-    }
 };
 
-function checkElementalReaction(targetData, incomingElement) {
-    // 1. ตรวจสอบว่ามีข้อมูล Effect หรือไม่
-    if (!targetData.activeEffects) return null;
-    
-    // 2. ค้นหาว่าเป้าหมาย "ติดธาตุ" (ELEMENTAL_STATUS) อะไรอยู่หรือไม่
-    const existingElementEffect = targetData.activeEffects.find(e => e.type === 'ELEMENTAL_STATUS');
-    
-    // ถ้าศัตรูตัวเปล่า ไม่ติดธาตุ -> ไม่เกิด Reaction (แต่จะไปติดธาตุใหม่แทนในขั้นตอนถัดไป)
-    if (!existingElementEffect) return null;
 
-    const currentElement = existingElementEffect.amount; // เช่น 'ICE'
-    
-    // 3. ตรวจสอบตาราง Reaction (ต้องมั่นใจว่าโหลด skills-data.js แล้ว)
-    if (typeof ELEMENT_REACTIONS === 'undefined') {
-        console.error("ไม่พบตาราง ELEMENT_REACTIONS กรุณาโหลด skills-data.js");
-        return null;
-    }
-
-    // 4. จับคู่ธาตุ: เช็คทั้ง [ธาตุเก่า][ธาตุใหม่] และ [ธาตุใหม่][ธาตุเก่า] เผื่อตารางเขียนสลับกัน
-    const reaction = ELEMENT_REACTIONS[currentElement]?.[incomingElement] || 
-                     ELEMENT_REACTIONS[incomingElement]?.[currentElement];
-    
-    if (reaction) {
-        // เจอคู่ผสม! คืนค่าผลลัพธ์กลับไป
-        return {
-            name: reaction.effect,           // ชื่อท่า เช่น "Vaporize"
-            multiplier: reaction.multiplier || 1.0, // ตัวคูณดาเมจ
-            status: reaction.status,         // สถานะผิดปกติที่แถมมา (เช่น แช่แข็ง)
-            clears: reaction.clears          // ธาตุที่จะถูกลบออกหลังระเบิด
-        };
-    }
-    
-    // ไม่เข้าคู่ใดเลย
-    return null;
+if (typeof window !== 'undefined') {
+    window.ELEMENT_REACTIONS = ELEMENT_REACTIONS;
 }

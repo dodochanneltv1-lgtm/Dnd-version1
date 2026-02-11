@@ -15,7 +15,7 @@ let characterData = null; // ข้อมูลตัวละครฉบับ
 let newPointsAvailable = 0; // แต้มที่เพิ่งได้มา (เช่น 10 แต้ม)
 let baseInvested = {}; // ค่า investedStats เดิมก่อนเริ่มหน้านี้
 const statsToAssign = {}; // ค่า investedStats ชั่วคราวบนหน้าจอ
-const statOrder = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA'];
+const statOrder = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA', 'EM'];
 
 // --- Utility & Calculation Functions ---
 // (ฟังก์ชัน showCustomAlert, calculateHP, getStatBonus จะถูกโหลดมาก่อนจาก
