@@ -163,6 +163,7 @@
                   <tr> <td>INT</td> <td><input type="number" id="editINTRace" readonly></td> <td><input type="number" id="editINTClass" readonly></td> <td><input type="number" id="editINTInvested" readonly></td> <td><input type="number" id="editINTTemp" oninput="updateStatTotals('INT')"></td> <td><input type="number" id="editINTTotal" readonly></td> </tr>
                   <tr> <td>WIS</td> <td><input type="number" id="editWISRace" readonly></td> <td><input type="number" id="editWISClass" readonly></td> <td><input type="number" id="editWISInvested" readonly></td> <td><input type="number" id="editWISTemp" oninput="updateStatTotals('WIS')"></td> <td><input type="number" id="editWISTotal" readonly></td> </tr>
                   <tr> <td>CHA</td> <td><input type="number" id="editCHARace" readonly></td> <td><input type="number" id="editCHAClass" readonly></td> <td><input type="number" id="editCHAInvested" readonly></td> <td><input type="number" id="editCHATemp" oninput="updateStatTotals('CHA')"></td> <td><input type="number" id="editCHATotal" readonly></td> </tr>
+                  <tr> <td>EM</td> <td><input type="number" id="editEMRace" readonly></td> <td><input type="number" id="editEMClass" readonly></td> <td><input type="number" id="editEMInvested" readonly></td> <td><input type="number" id="editEMTemp" oninput="updateStatTotals('EM')"></td> <td><input type="number" id="editEMTotal" readonly></td> </tr>
               </tbody>
           </table>
           <button onclick="saveStats()" style="margin-top: 10px; width: 100%; background-color: #28a745;">✨ บันทึกสถานะ (บัฟ/ดีบัฟ)</button>
@@ -338,7 +339,14 @@
       <label>HP:</label><input type="number" id="monsterHp">
       <label>STR:</label><input type="number" id="monsterStr">
       <label>DEX:</label><input type="number" id="monsterDex">
-      <label>CON:</label><input type="number" id="monsterCon"> <label>INT:</label><input type="number" id="monsterInt"> <label>WIS:</label><input type="number" id="monsterWis"> <label>CHA:</label><input type="number" id="monsterCha"> <label>ลูกเต๋าความเสียหาย:</label><input type="text" id="monsterDamageDice" placeholder="เช่น d6"> <button onclick="addMonster(false)">🧟‍♂️ เพิ่ม 1 ตัว</button>
+      <label>CON:</label><input type="number" id="monsterCon">
+      <label>INT:</label><input type="number" id="monsterInt">
+      <label>WIS:</label><input type="number" id="monsterWis">
+      <label>CHA:</label><input type="number" id="monsterCha"> 
+      <input type="number" id="monsterExp" placeholder="EXP ที่ได้รับเมื่อตาย" min="0">
+      <label>ลูกเต๋าความเสียหาย:</label>
+      <input type="text" id="monsterDamageDice" placeholder="เช่น d6"> 
+      <button onclick="addMonster(false)">🧟‍♂️ เพิ่ม 1 ตัว</button>
       <button onclick="addMonster(true)" style="background-color: #fd7e14;">🧟‍♂️🧟‍♂️ เพิ่มตามจำนวนผู้เล่น</button>
       <hr>
       <h4>สร้างคู่ต่อสู้เอง</h4>
@@ -346,7 +354,13 @@
       <label>HP:</label><input type="number" id="customEnemyHp">
       <label>STR:</label><input type="number" id="customEnemyStr">
       <label>DEX:</label><input type="number" id="customEnemyDex">
-      <label>CON:</label><input type="number" id="customEnemyCon"> <label>INT:</label><input type="number" id="customEnemyInt"> <label>WIS:</label><input type="number" id="customEnemyWis"> <label>CHA:</label><input type="number" id="customEnemyCha"> <label>ลูกเต๋าความเสียหาย:</label><input type="text" id="customEnemyDamageDice" placeholder="เช่น d6">
+      <label>CON:</label><input type="number" id="customEnemyCon"> 
+      <label>INT:</label><input type="number" id="customEnemyInt"> 
+      <label>WIS:</label><input type="number" id="customEnemyWis"> 
+      <label>CHA:</label><input type="number" id="customEnemyCha"> 
+      <input type="number" id="customEnemyExp" placeholder="EXP ที่ได้รับเมื่อตาย" min="0">
+      <label>ลูกเต๋าความเสียหาย:</label>
+      <input type="text" id="customEnemyDamageDice" placeholder="เช่น d6">
       <button onclick="addCustomEnemy()">➕ เพิ่มคู่ต่อสู้ที่สร้างเอง</button>
     </div>
     
@@ -360,6 +374,7 @@
       <button onclick="sendQuest(false)">📜 ส่งให้ผู้เล่นที่เลือก</button>
       <button onclick="sendQuest(true)" style="background-color: #17a2b8; color: white; margin-top: 10px;">🌍 ส่งให้ผู้เล่นทุกคน</button>
     </div>
+    
 
     <div class="panel">
         <h2>🏪 จัดการร้านค้า</h2>
@@ -389,21 +404,34 @@
         </div>
     </div>
     
-    <div class="panel">
+    <div class="panel" style="border-color: #ffae00;">
         <h2>📜 จัดการกิลด์ (เควสเลื่อนขั้น)</h2>
-        <p>สร้างเควสสำหรับเลื่อนขั้น (ผู้เล่นจะเห็นใน `map.html`)</p>
-        <label>ชื่อเควส:</label>
-        <input type="text" id="guildQuestTitle" placeholder="เช่น ทดสอบอัศวิน">
-        <label>รายละเอียดเควส:</label>
-        <textarea id="guildQuestDesc" rows="2" placeholder="เช่น กำจัดก็อบลิน 10 ตัว"></textarea>
-        <label>สำหรับอาชีพ (Main Class):</label>
-        <select id="guildQuestForClass"></select>
-        <label>เมื่อถึงเลเวล:</label>
-        <input type="number" id="guildQuestForLevel" min="1" placeholder="เช่น 20">
-        <button onclick="addGuildQuestToDB()" style="background-color: #007bff;">➕ เพิ่มเควสเลื่อนขั้น</button>
+        <p>สร้างบททดสอบให้ผู้เล่น (ผู้เล่นจะรับเควสนี้ได้ที่กระดานกิลด์ในหน้า Map)</p>
+        
+        <label>ชื่อภารกิจ:</label>
+        <input type="text" id="questTitle" placeholder="เช่น บททดสอบแห่งอัศวิน">
+        
+        <label>เป้าหมายมอนสเตอร์ (ชื่อต้องตรงกัน):</label>
+        <input type="text" id="questTarget" placeholder="เช่น สไลม์ไฟ">
+        
+        <label>จำนวนที่ต้องล่า (ตัว):</label>
+        <input type="number" id="questCount" min="1" value="1">
+        
+        <label>อาชีพที่จะได้รับเมื่อสำเร็จ:</label>
+        <select id="questRewardClass">
+            <option value="">-- เลือกอาชีพ --</option>
+            <option value="อัศวิน">อัศวิน (สายนักรบ)</option>
+            <option value="เบอร์เซิร์กเกอร์">เบอร์เซิร์กเกอร์ (สายนักรบ)</option>
+            <option value="พาลาดิน">พาลาดิน (สายแทงค์)</option>
+            <option value="จอมเวทย์">จอมเวทย์ (สายเวทมนตร์)</option>
+            <option value="นักบุญ">นักบุญ (สายนักบวช)</option>
+            <option value="ผู้ใช้คำสาป">ผู้ใช้คำสาป (สายนักบวช)</option>
+            </select>
+
+        <button onclick="createGuildQuest()" style="background: linear-gradient(90deg, #ffae00, #ff4500);">📌 แปะเควสลงกระดานกิลด์</button>
 
         <hr style="border-color: #555; margin: 20px 0;">
-        <h4 style="color: #ffc107;">📜 เควสที่มีอยู่ (<span id="guildQuestCount">0</span> เควส)</h4>
+        <h4 style="color: #ffc107;">📜 เควสบนกระดานปัจจุบัน (<span id="guildQuestCount">0</span> เควส)</h4>
         <div id="currentGuildQuestsList" style="max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px;">
             <p style="color:#aaa; text-align:center;">กำลังโหลด...</p>
         </div>
@@ -419,6 +447,36 @@
       <input type="number" id="dmDiceCount" value="1" min="1" max="10">
       <button onclick="rollDmDice()">🎲 DM ทอย!</button>
       
+    </div>
+
+    <div class="panel">
+        <h2>🛌 AFK Manager</h2>
+            <p style="color:#aaa; margin-top:-6px;">
+                ออโต้ย้ายเมื่อ offline + กันเทิร์นตกหลุม + กันบอทตีคนหาย
+            </p>
+
+        <label>ผู้เล่นที่อยู่ในห้อง:</label>
+        <select id="afkPlayerSelect">
+            <option value="">--- เลือกผู้เล่น ---</option>
+        </select>
+
+        <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
+            <button onclick="moveSelectedPlayerToAfk()" style="background:#c82333;">➡️ ย้ายไป AFK</button>
+            <button onclick="restoreSelectedPlayerFromAfk()" style="background:#28a745;">⬅️ ดึงกลับ</button>
+            <button onclick="refreshAfkUi()" style="background:#555;">🔄 รีเฟรช</button>
+        </div>
+
+        <hr style="border-color:#444; margin:15px 0;">
+
+        <h4 style="color:#ffc107; margin-bottom:6px;">📡 สถานะออนไลน์ในห้อง</h4>
+        <div id="presenceList" style="max-height:160px; overflow:auto; background:rgba(0,0,0,0.25); padding:10px; border-radius:6px;">
+            <p style="color:#aaa; text-align:center;">กำลังโหลด...</p>
+        </div>
+
+        <h4 style="color:#17a2b8; margin:12px 0 6px;">🧳 รายชื่อที่ถูกย้ายไป AFK</h4>
+        <div id="afkList" style="max-height:160px; overflow:auto; background:rgba(0,0,0,0.25); padding:10px; border-radius:6px;">
+            <p style="color:#aaa; text-align:center;">กำลังโหลด...</p>
+        </div>
     </div>
 
     <div class="panel">
@@ -446,10 +504,16 @@
   <script src="Javascript/ui-helpers.js"></script>
   <script src="Javascript/dice-roller.js"></script>
 
-  <script src="Javascript/skills-data.js"></script> 
-  <script src="Javascript/charector.js"></script>   
+  <script src="Javascript/skills-data.js"></script>
+  <!-- <script src="Javascript/element-reactions.js"></script> -->
+  <script src="Javascript/elemental-engine.js"></script>
+  <script src="Javascript/charector.js"></script>  
+  <script src="Javascript/stats-engine.js"></script> 
   
   <!-- (v2) ไฟล์นี้ต้องอยู่ล่างสุดเสมอ -->
-  <script src="Javascript/dm-panel-script.js"></script>
+  <script src="Javascript/dm-core.js"></script>
+  <script src="Javascript/dm-display.js"></script>
+  <script src="Javascript/dm-combat.js"></script>
+  <script src="Javascript/dm-admin.js"></script>
 </body>
 </html>
