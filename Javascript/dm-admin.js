@@ -1,4 +1,6 @@
-
+function addUnstackFromOrder() {
+    console.warn("addUnstackFromOrder ถูกเรียก แต่ยังไม่มีการใช้งานจริง");
+}
 // =================================================================================
 
 function addItem() {
@@ -413,29 +415,84 @@ async function addShopItemToDB() {
 
 async function addGuildQuestToDB() {
     const roomId = sessionStorage.getItem('roomId');
-    const questTitle = document.getElementById("guildQuestTitle").value.trim();
-    const forClass = document.getElementById("guildQuestForClass").value;
-    const forLevel = parseInt(document.getElementById("guildQuestForLevel").value);
-    
-    if (!roomId || !questTitle || !forClass || isNaN(forLevel)) {
-        return showCustomAlert("กรุณากรอกข้อมูลเควสเลื่อนขั้นให้ครบ", 'warning');
+
+    const job = document.getElementById('guildQuestJob').value;
+    const lvl = parseInt(document.getElementById('guildQuestLevel').value, 10);
+    const title = document.getElementById('guildQuestTitle').value.trim();
+    const description = document.getElementById('guildQuestDescription').value.trim();
+
+    if (!job || isNaN(lvl) || !title) {
+        return Swal.fire('ผิดพลาด', 'กรุณากรอกข้อมูลให้ครบ (อาชีพ / เลเวล / ชื่อเควส)', 'warning');
     }
-    
-    const questId = `quest_${forClass}_${forLevel}`;
+
+    const questId = `promote_${job}_${lvl}_${Date.now()}`;
+
     const questData = {
-        title: questTitle,
-        description: document.getElementById("guildQuestDesc").value || "ทำภารกิจให้สำเร็จ",
-        requiredClass: forClass,
-        requiredLevel: forLevel,
+        title,
+        description,
+        requiredClass: job,
+        requiredLevel: lvl
     };
-    
-    const guildRef = db.ref(`rooms/${roomId}/guild/quests/${questId}`);
+
     try {
-        await guildRef.set(questData);
-        showCustomAlert(`เพิ่มเควส '${questTitle}' สำหรับ Lv.${forLevel} ${forClass} สำเร็จ!`, 'success');
+        await db.ref(`rooms/${roomId}/guildQuests/${questId}`).set(questData);
+        Swal.fire('สำเร็จ', 'เพิ่มเควสเลื่อนขั้นแล้ว', 'success');
     } catch (error) {
-        showCustomAlert("ล้มเหลวในการเพิ่มเควส: " + error.message, 'error');
+        Swal.fire('ผิดพลาด', error.message, 'error');
     }
+}
+async function createGuildBoardQuest() {
+  const roomId = sessionStorage.getItem('roomId');
+  if (!roomId) return Swal.fire('ผิดพลาด', 'ไม่พบ roomId', 'error');
+
+  // ✅ ใช้ id ชุดนี้ให้ตรงกับฟอร์มในรูปของมึง
+  const titleEl = document.getElementById("questTitle");
+  const targetEl = document.getElementById("questTarget");
+  const countEl = document.getElementById("questCount");
+  const rewardClassEl = document.getElementById("questRewardClass");
+
+  if (!titleEl || !targetEl || !countEl || !rewardClassEl) {
+    console.error("GuildBoardQuest: element not found", {
+      titleEl, targetEl, countEl, rewardClassEl
+    });
+    return Swal.fire('ผิดพลาด', 'โครงสร้างหน้า HTML ไม่ครบ (ID input ไม่ตรง)', 'error');
+  }
+
+  const title = titleEl.value.trim();
+  const targetMonster = targetEl.value.trim();
+  const requiredCount = parseInt(countEl.value, 10) || 0;
+  const rewardClass = rewardClassEl.value.trim();
+
+  if (!title || !targetMonster || requiredCount <= 0 || !rewardClass) {
+    return Swal.fire('ผิดพลาด', 'กรุณากรอกข้อมูลให้ครบ (ชื่อ/เป้าหมาย/จำนวน/รางวัล)', 'warning');
+  }
+
+  const questId = `board_${Date.now()}`;
+  const questData = {
+    id: questId,
+    title,
+    targetMonster,
+    requiredCount,
+    rewardClass,
+    createdAt: Date.now()
+  };
+
+  try {
+    // ✅ สำคัญ: เก็บลง guildBoardQuests (ไม่ใช่ guildQuests)
+    await db.ref(`rooms/${roomId}/guildBoardQuests/${questId}`).set(questData);
+
+    Swal.fire('สำเร็จ', 'แปะเควสบอร์ดเรียบร้อย!', 'success');
+
+    // เคลียร์ฟอร์ม
+    titleEl.value = '';
+    targetEl.value = '';
+    countEl.value = '1';
+    rewardClassEl.value = '';
+
+  } catch (err) {
+    console.error("createGuildBoardQuest error:", err);
+    Swal.fire('ผิดพลาด', err.message, 'error');
+  }
 }
 
 function monitorShopItems() {
@@ -512,6 +569,11 @@ function deleteShopItem(shopId, itemId, itemName) {
     });
 }
 
+// ✅ ใช้อันนี้แทน "ฟังก์ชันสร้างเควส" ตัวเก่าที่มั่ว node
+async function createQuest() {
+  return createGuildBoardQuest();
+}
+
 function monitorGuildQuests() {
     const roomId = sessionStorage.getItem('roomId');
     const listDiv = document.getElementById("currentGuildQuestsList");
@@ -519,7 +581,7 @@ function monitorGuildQuests() {
     
     if (!roomId) return;
 
-    db.ref(`rooms/${roomId}/guild/quests`).on('value', (snapshot) => {
+    db.ref(`rooms/${roomId}/guildQuests`).on('value', (snapshot) => {
         const quests = snapshot.val() || {};
         const questCount = Object.keys(quests).length;
         
@@ -564,7 +626,7 @@ function deleteGuildQuest(questId, questTitle) {
         confirmButtonColor: '#d33'
     }).then((result) => {
         if (result.isConfirmed) {
-            db.ref(`rooms/${roomId}/guild/quests/${questId}`).remove()
+            db.ref(`rooms/${roomId}/guildQuests/${questId}`).remove()
                 .then(() => {
                     const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500 });
                     Toast.fire({ icon: 'success', title: 'ลบเรียบร้อย' });
@@ -1342,6 +1404,8 @@ async function createGuildQuest() {
         console.error("Create Quest Error:", error);
         showCustomAlert('เกิดข้อผิดพลาดในการสร้างเควส', 'error');
     }
+
+    return createGuildBoardQuest();
 }
 
 // 2. ฟังก์ชันดึงเควสมาแสดงให้ DM ดู และสามารถลบได้
@@ -1380,22 +1444,63 @@ function monitorDMGuildQuests() {
     });
 }
 
-// 3. ฟังก์ชันลบเควสออกจากบอร์ด
-function deleteGuildQuest(questId) {
+function monitorDMGuildBoardQuests() {
     const roomId = sessionStorage.getItem('roomId');
+    const listDiv = document.getElementById('guild-quest-list');
+
+    db.ref(`rooms/${roomId}/guildBoardQuests`).on('value', (snapshot) => {
+        const quests = snapshot.val() || {};
+        listDiv.innerHTML = '';
+
+        const keys = Object.keys(quests);
+        if (keys.length === 0) {
+            listDiv.innerHTML = '<p style="color:#aaa; text-align:center;">- ไม่มีเควสบอร์ด -</p>';
+            return;
+        }
+
+        keys.forEach((qid) => {
+            const q = quests[qid];
+            listDiv.innerHTML += `
+              <div style="border:1px solid #333; padding:10px; margin:8px 0; border-radius:10px; background:#1f1f1f;">
+                <div style="font-weight:bold; color:#fff;">${q.title || '(ไม่มีชื่อ)'}</div>
+                <div style="color:#bbb; font-size:13px; margin-top:4px;">
+                  เป้าหมาย: ${q.targetMonster} x ${q.requiredCount}<br>
+                  รางวัลคลาส: ${q.rewardClass} | EXP: ${q.rewardExp}
+                </div>
+                <button onclick="deleteGuildBoardQuest('${qid}')" style="margin-top:8px; width:100%; padding:8px; background:#b71c1c; color:#fff; border:none; border-radius:8px;">
+                  ลบเควสนี้
+                </button>
+              </div>
+            `;
+        });
+    });
+}
+
+// 3. ฟังก์ชันลบเควสออกจากบอร์ด
+function deleteGuildQuest(questId, questTitle) {
+    const roomId = sessionStorage.getItem('roomId');
+
     Swal.fire({
-        title: 'ยืนยันการลบเควส?',
-        text: "หากลบแล้ว เควสนี้จะหายไปจากกระดานกิลด์ทันที",
+        title: 'ยืนยันการลบ',
+        text: `ต้องการลบ "${questTitle}" ใช่ไหม?`,
         icon: 'warning',
         showCancelButton: true,
-        confirmButtonColor: '#dc3545',
-        confirmButtonText: 'ใช่, ลบทิ้งเลย!',
+        confirmButtonText: 'ลบ',
         cancelButtonText: 'ยกเลิก'
     }).then((result) => {
-        if (result.isConfirmed) {
-            db.ref(`rooms/${roomId}/guildQuests/${questId}`).remove();
-        }
+        if (!result.isConfirmed) return;
+
+        db.ref(`rooms/${roomId}/guildQuests/${questId}`).remove()
+            .then(() => Swal.fire('ลบแล้ว', 'ลบเควสเลื่อนขั้นเรียบร้อย', 'success'))
+            .catch(err => Swal.fire('ผิดพลาด', err.message, 'error'));
     });
+}
+function deleteGuildBoardQuest(questId) {
+    const roomId = sessionStorage.getItem('roomId');
+
+    db.ref(`rooms/${roomId}/guildBoardQuests/${questId}`).remove()
+        .then(() => Swal.fire('ลบแล้ว', 'ลบเควสบอร์ดเรียบร้อย', 'success'))
+        .catch(err => Swal.fire('ผิดพลาด', err.message, 'error'));
 }
 
 // สั่งให้เริ่มดึงข้อมูลทันทีเมื่อเปิดหน้า DM

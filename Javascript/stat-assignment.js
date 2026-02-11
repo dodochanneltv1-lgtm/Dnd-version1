@@ -57,11 +57,23 @@ function calculateTotalStatForAssignment(statKey) {
     return Math.floor(finalStat);
 }
 
-
-// --- Core Functions ---
+function registerStatPagePresence(roomId, uid) {
+    const presRef = db.ref(`rooms/${roomId}/presence/${uid}`);
+    presRef.set({
+        status: 'online',
+        lastActive: firebase.database.ServerValue.TIMESTAMP
+    });
+    presRef.onDisconnect().set({
+        status: 'offline',
+        lastActive: firebase.database.ServerValue.TIMESTAMP
+    });
+    setInterval(() => {
+        presRef.update({ lastActive: firebase.database.ServerValue.TIMESTAMP });
+    }, 20000);
+}
 
 /**
- * โหลดข้อมูลตัวละครเมื่อเข้าหน้านี้
+ * โหลดข้อมูลตัวละครเมื่อเข้าหน้านี้ (ดึงกลับจาก AFK อัตโนมัติ)
  */
 function loadCharacterData(uid) {
     const roomId = sessionStorage.getItem('roomId');
@@ -71,34 +83,55 @@ function loadCharacterData(uid) {
         return;
     }
 
+    // 1. ยืนยันว่าเรายังออนไลน์อยู่!
+    registerStatPagePresence(roomId, uid);
+
     showLoading("กำลังโหลดข้อมูล...");
     const playerRef = db.ref(`rooms/${roomId}/playersByUid/${uid}`);
+    const afkRef = db.ref(`rooms/${roomId}/afkPlayersByUid/${uid}`);
     
-    playerRef.get().then((snapshot) => {
+    // 2. ตรวจสอบว่ามีข้อมูลปกติไหม
+    playerRef.get().then(async (snapshot) => {
+        let data = snapshot.val();
+
+        // 3. ถ้าไม่มี (โดนเตะไป AFK ระหว่างเปลี่ยนหน้า) ให้ไปค้นในกล่อง AFK และดึงกลับมา
+        if (!data) {
+            const afkSnap = await afkRef.get();
+            if (afkSnap.exists()) {
+                data = afkSnap.val();
+                
+                // ถอดแท็ก AFK ออก และย้ายกลับเข้าห้อง
+                delete data.__afk;
+                delete data.__afkReason;
+                delete data.__afkAt;
+                
+                await playerRef.set(data); // ยัดกลับใส่คนเล่นจริง
+                await afkRef.remove();     // ลบรายชื่อออกจาก AFK
+                console.log("กู้คืนข้อมูลตัวละครจากโหมด AFK สำเร็จ!");
+            }
+        }
+
         hideLoading();
-        if (snapshot.exists()) {
-            characterData = snapshot.val();
+
+        // 4. ถ้าหาเจอ (ไม่ว่าจะจากห้องปกติ หรือ กู้มาจาก AFK) ให้ทำงานต่อ
+        if (data) {
+            characterData = data;
             
-            // [FIX START] แก้ไข: แปลงข้อมูลทั้งหมดเป็นตัวเลข (Integer) ป้องกัน Error แต้มติดลบ/ต่อ String
             baseInvested = {};
             const rawInvested = characterData.stats.investedStats || {};
             
-            // วนลูปแปลงค่าทุกค่าใน investedStats ให้เป็นตัวเลข
             for (const key in rawInvested) {
                 baseInvested[key] = parseInt(rawInvested[key]) || 0;
             }
 
-            // ล้างค่า statsToAssign เก่าออกก่อน แล้วคัดลอกค่าที่เป็นตัวเลขแล้วลงไป
             for (const key in statsToAssign) delete statsToAssign[key];
             Object.assign(statsToAssign, baseInvested);
             
-            // แปลงแต้มคงเหลือเป็นตัวเลขด้วย
             newPointsAvailable = parseInt(characterData.freeStatPoints) || 0;
-            // [FIX END]
             
-            // เริ่มสร้าง UI
             renderStatAssignment();
         } else {
+            // ถ้าไม่เจอจริงๆ ค่อยเด้งไปสร้างใหม่
             showCustomAlert("ไม่พบข้อมูลตัวละคร! กรุณาสร้างตัวละครใหม่", 'error');
             window.location.replace('PlayerCharecter.html');
         }

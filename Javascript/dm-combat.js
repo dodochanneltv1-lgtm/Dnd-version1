@@ -363,9 +363,10 @@ async function executeAttack(attackerId, targetId, isAuto = false) {
       } else {
         // Fallback
         unit.hp = (unit.hp || 0) - finalDamage;
-        if (unit.hp < 0) unit.hp = 0;
-        realDamageTaken = finalDamage;
-        shieldLogs = [];
+        if (unit.hp <= 0) {
+            unit.hp = 0;
+        setTimeout(() => handleEnemyDeath(roomId, targetId, unit, attackerId), 100);
+        }
       }
 
       // อัปเดตธาตุ
@@ -373,6 +374,183 @@ async function executeAttack(attackerId, targetId, isAuto = false) {
 
       return unit;
     });
+
+    /* ================================================================================================================================*/
+
+// ================= [NEW] ระบบจัดการเมื่อศัตรูตาย (Drops & Quests) =================
+
+async function handleEnemyDeath(roomId, enemyKey, enemyData, killerId) {
+    console.log(`💀 Enemy Died: ${enemyData.name} by ${killerId}`);
+    
+    // 1. แจก EXP (ถ้ามี)
+    if (enemyData.expReward > 0) {
+        // แจกทุกคนในห้อง หรือ เฉพาะคนฆ่า? -> เอาแบบหารเท่า หรือ แจกทุกคนดีกว่าเพื่อความง่าย
+        // ในที่นี้แจกทุกคนที่อยู่ในห้อง (Party Share)
+        const playersSnap = await db.ref(`rooms/${roomId}/playersByUid`).get();
+        if (playersSnap.exists()) {
+            const updates = {};
+            playersSnap.forEach(p => {
+                const pData = p.val();
+                let newExp = (pData.exp || 0) + enemyData.expReward;
+                // เช็ค Level Up (Basic logic)
+                // ... (ใส่ Logic Level Up ที่นี่ถ้าต้องการ) ...
+                updates[`rooms/${roomId}/playersByUid/${p.key}/exp`] = newExp;
+            });
+            await db.ref().update(updates);
+            
+            // Log
+            db.ref(`rooms/${roomId}/combatLogs`).push({
+                message: `✨ <b>${enemyData.name}</b> ถูกกำจัด! ปาร์ตี้ได้รับ ${enemyData.expReward} EXP!`,
+                timestamp: Date.now()
+            });
+        }
+    }
+
+    // 2. ระบบ Drop ไอเทม
+    if (enemyData.drops && Array.isArray(enemyData.drops)) {
+        let dropLogs = [];
+        
+        // ดึงข้อมูลคนฆ่า (เพื่อยัดของใส่กระเป๋า)
+        // ถ้าคนฆ่าเป็น Monster/Summon ให้หา Owner หรือสุ่มผู้เล่น
+        let realKillerId = killerId;
+        // (Simplified: ให้คนฆ่าได้ของ ถ้าหาไม่เจอให้คนที่ 1 ในห้อง)
+        
+        const killerRef = db.ref(`rooms/${roomId}/playersByUid/${realKillerId}`);
+        const killerSnap = await killerRef.get();
+        
+        if (killerSnap.exists()) {
+            const killerInv = killerSnap.val().inventory || [];
+            let invChanged = false;
+
+            enemyData.drops.forEach(drop => {
+                const roll = Math.random() * 100;
+                if (roll <= drop.chance) {
+                    // Drop Success!
+                    // สร้างไอเทม
+                    const newItem = {
+                        name: drop.name,
+                        quantity: 1,
+                        itemType: 'ทั่วไป', // หรือจะระบุประเภทถ้าทำได้
+                        price: drop.price || 0,
+                        durability: 100, // ✅ เพิ่มบรรทัดนี้ เพื่อให้เหมือนไอเทมที่เสกจาก DM
+                        maxDurability: 100, // ✅ และอันนี้ด้วย (ถ้ามีระบบซ่อม)
+                        droppedFrom: enemyData.name
+                    };
+
+                    // Stack Logic (Simplified)
+                    const existing = killerInv.find(i => i.name === newItem.name);
+                    if (existing) existing.quantity++;
+                    else killerInv.push(newItem);
+                    
+                    invChanged = true;
+                    dropLogs.push(drop.name);
+                }
+            });
+
+            if (invChanged) {
+                await killerRef.child('inventory').set(killerInv);
+                if (dropLogs.length > 0) {
+                    db.ref(`rooms/${roomId}/combatLogs`).push({
+                        message: `🎁 <b>${enemyData.name}</b> ดรอป: ${dropLogs.join(', ')} (เข้าตัว ${killerSnap.val().name})`,
+                        timestamp: Date.now()
+                    });
+                }
+            }
+        }
+    }
+
+    // 3. ระบบ Quest Auto-Update & Complete
+    // วนลูปผู้เล่นทุกคน เช็คว่ามีเควสล่าตัวนี้ไหม
+    const playersSnap = await db.ref(`rooms/${roomId}/playersByUid`).get();
+    playersSnap.forEach(async (pSnap) => {
+        const uid = pSnap.key;
+        const pData = pSnap.val();
+        
+        if (pData.activeQuest && pData.activeQuest.targetName === enemyData.name) {
+            // ชื่อตรง!
+            const q = pData.activeQuest;
+            
+            // เพิ่มจำนวน
+            // (ใช้ Transaction เพื่อความชัวร์ หรือ update ดื้อๆ ก็ได้)
+            const qRef = db.ref(`rooms/${roomId}/playersByUid/${uid}/activeQuest`);
+            
+            // อัปเดต +1
+            let newCount = (q.currentCount || 0) + 1;
+            await qRef.update({ currentCount: newCount });
+
+            // เช็คว่าครบยัง?
+            if (newCount >= q.targetCount) {
+                // --- ภารกิจสำเร็จ! ---
+                completePlayerQuest(roomId, uid, pData, q);
+            }
+        }
+    });
+}
+
+// ฟังก์ชันจบเควสและแจกรางวัล
+async function completePlayerQuest(roomId, uid, pData, quest) {
+    const updates = {};
+    const logs = [];
+
+    // 1. รางวัลพื้นฐาน
+    if (quest.rewardGP) {
+        updates[`gp`] = (pData.gp || 0) + quest.rewardGP;
+        logs.push(`${quest.rewardGP} GP`);
+    }
+    if (quest.rewardEXP) {
+        updates[`exp`] = (pData.exp || 0) + quest.rewardEXP;
+        logs.push(`${quest.rewardEXP} EXP`);
+    }
+    
+    // 2. รางวัล Rank EXP (สำหรับเควสทั่วไป)
+    if (quest.rewardRankExp) {
+        updates[`rankExp`] = (pData.rankExp || 0) + quest.rewardRankExp;
+        logs.push(`${quest.rewardRankExp} Rank EXP`);
+    }
+
+    // 3. รางวัลไอเทม
+    if (quest.rewardItem) {
+        const inv = pData.inventory || [];
+        inv.push({ name: quest.rewardItem, quantity: 1, itemType: 'รางวัล' });
+        updates[`inventory`] = inv;
+        logs.push(`ไอเทม [${quest.rewardItem}]`);
+    }
+
+    // 4. รางวัลพิเศษ: เลื่อนขั้นอาชีพ (Promotion)
+    if (quest.type === 'promotion' && quest.rewardClass) {
+        updates[`classMain`] = quest.rewardClass;
+        // อาจจะรีเซ็ต Level หรือเพิ่ม Stat Bonus ก็ได้ แล้วแต่ดีไซน์
+        logs.push(`🎉 เลื่อนขั้นเป็น [${quest.rewardClass}]`);
+    }
+
+    // 5. รางวัลพิเศษ: เลื่อนขั้นแรงค์ (Rank Up)
+    if (quest.type === 'rankup' && quest.rewardRank) {
+        updates[`adventurerRank`] = quest.rewardRank;
+        updates[`rankExp`] = 0; // รีเซ็ตแต้มแรงค์เมื่อขึ้นขั้นใหม่
+        logs.push(`🏆 เลื่อนระดับนักผจญภัยเป็น Rank [${quest.rewardRank}]`);
+    }
+
+    // 6. ลบ Active Quest
+    updates[`activeQuest`] = null;
+
+    // Apply Updates
+    await db.ref(`rooms/${roomId}/playersByUid/${uid}`).update(updates);
+
+    // ประกาศ
+    Swal.fire({
+        title: 'ภารกิจสำเร็จ!',
+        html: `คุณสำเร็จภารกิจ <b>${quest.title}</b><br>ได้รับ: ${logs.join(', ')}`,
+        icon: 'success'
+    });
+    
+    db.ref(`rooms/${roomId}/combatLogs`).push({
+        message: `📜 <b>${pData.name}</b> สำเร็จภารกิจ [${quest.title}]! ได้รับรางวัล: ${logs.join(', ')}`,
+        timestamp: Date.now()
+    });
+}
+
+
+/* ================================================================================================================================*/
 
     // 6. สร้าง Log Message
     const color = (targetType === 'player' || targetData.type === 'player_summon') ? '#ff4d4d' : '#00ff00';
@@ -1044,4 +1222,175 @@ async function removeUnitFromTurnOrder(roomId, unitId, unitType) {
     currentTurnIndex: Math.min(newIndex, newOrder.length - 1),
     lastUpdated: Date.now()
   });
+}
+
+
+
+async function handleEnemyDeath(roomId, enemyKey, enemyData, killerId) {
+    console.log(`💀 Enemy Died: ${enemyData.name} by ${killerId}`);
+    
+    // 1. แจก EXP (ถ้ามี)
+    if (enemyData.expReward > 0) {
+        // แจกทุกคนในห้อง หรือ เฉพาะคนฆ่า? -> เอาแบบหารเท่า หรือ แจกทุกคนดีกว่าเพื่อความง่าย
+        // ในที่นี้แจกทุกคนที่อยู่ในห้อง (Party Share)
+        const playersSnap = await db.ref(`rooms/${roomId}/playersByUid`).get();
+        if (playersSnap.exists()) {
+            const updates = {};
+            playersSnap.forEach(p => {
+                const pData = p.val();
+                let newExp = (pData.exp || 0) + enemyData.expReward;
+                // เช็ค Level Up (Basic logic)
+                // ... (ใส่ Logic Level Up ที่นี่ถ้าต้องการ) ...
+                updates[`rooms/${roomId}/playersByUid/${p.key}/exp`] = newExp;
+            });
+            await db.ref().update(updates);
+            
+            // Log
+            db.ref(`rooms/${roomId}/combatLogs`).push({
+                message: `✨ <b>${enemyData.name}</b> ถูกกำจัด! ปาร์ตี้ได้รับ ${enemyData.expReward} EXP!`,
+                timestamp: Date.now()
+            });
+        }
+    }
+
+    // 2. ระบบ Drop ไอเทม
+    if (enemyData.drops && Array.isArray(enemyData.drops)) {
+        let dropLogs = [];
+        
+        // ดึงข้อมูลคนฆ่า (เพื่อยัดของใส่กระเป๋า)
+        // ถ้าคนฆ่าเป็น Monster/Summon ให้หา Owner หรือสุ่มผู้เล่น
+        let realKillerId = killerId;
+        // (Simplified: ให้คนฆ่าได้ของ ถ้าหาไม่เจอให้คนที่ 1 ในห้อง)
+        
+        const killerRef = db.ref(`rooms/${roomId}/playersByUid/${realKillerId}`);
+        const killerSnap = await killerRef.get();
+        
+        if (killerSnap.exists()) {
+            const killerInv = killerSnap.val().inventory || [];
+            let invChanged = false;
+
+            enemyData.drops.forEach(drop => {
+                const roll = Math.random() * 100;
+                if (roll <= drop.chance) {
+                    // Drop Success!
+                    // สร้างไอเทม
+                    const newItem = {
+                        name: drop.name,
+                        quantity: 1,
+                        itemType: 'ทั่วไป', // หรือจะระบุประเภทถ้าทำได้
+                        price: drop.price || 0,
+                        durability: 100, // ✅ เพิ่มบรรทัดนี้ เพื่อให้เหมือนไอเทมที่เสกจาก DM
+                        maxDurability: 100, // ✅ และอันนี้ด้วย (ถ้ามีระบบซ่อม)
+                        droppedFrom: enemyData.name
+                    };
+
+                    // Stack Logic (Simplified)
+                    const existing = killerInv.find(i => i.name === newItem.name);
+                    if (existing) existing.quantity++;
+                    else killerInv.push(newItem);
+                    
+                    invChanged = true;
+                    dropLogs.push(drop.name);
+                }
+            });
+
+            if (invChanged) {
+                await killerRef.child('inventory').set(killerInv);
+                if (dropLogs.length > 0) {
+                    db.ref(`rooms/${roomId}/combatLogs`).push({
+                        message: `🎁 <b>${enemyData.name}</b> ดรอป: ${dropLogs.join(', ')} (เข้าตัว ${killerSnap.val().name})`,
+                        timestamp: Date.now()
+                    });
+                }
+            }
+        }
+    }
+
+    // 3. ระบบ Quest Auto-Update & Complete
+    // วนลูปผู้เล่นทุกคน เช็คว่ามีเควสล่าตัวนี้ไหม
+    const playersSnap = await db.ref(`rooms/${roomId}/playersByUid`).get();
+    playersSnap.forEach(async (pSnap) => {
+        const uid = pSnap.key;
+        const pData = pSnap.val();
+        
+        if (pData.activeQuest && pData.activeQuest.targetName === enemyData.name) {
+            // ชื่อตรง!
+            const q = pData.activeQuest;
+            
+            // เพิ่มจำนวน
+            // (ใช้ Transaction เพื่อความชัวร์ หรือ update ดื้อๆ ก็ได้)
+            const qRef = db.ref(`rooms/${roomId}/playersByUid/${uid}/activeQuest`);
+            
+            // อัปเดต +1
+            let newCount = (q.currentCount || 0) + 1;
+            await qRef.update({ currentCount: newCount });
+
+            // เช็คว่าครบยัง?
+            if (newCount >= q.targetCount) {
+                // --- ภารกิจสำเร็จ! ---
+                completePlayerQuest(roomId, uid, pData, q);
+            }
+        }
+    });
+}
+
+async function completePlayerQuest(roomId, uid, pData, quest) {
+    const updates = {};
+    const logs = [];
+
+    // 1. รางวัลพื้นฐาน
+    if (quest.rewardGP) {
+        updates[`gp`] = (pData.gp || 0) + quest.rewardGP;
+        logs.push(`${quest.rewardGP} GP`);
+    }
+    if (quest.rewardEXP) {
+        updates[`exp`] = (pData.exp || 0) + quest.rewardEXP;
+        logs.push(`${quest.rewardEXP} EXP`);
+    }
+    
+    // 2. รางวัล Rank EXP (สำหรับเควสทั่วไป)
+    if (quest.rewardRankExp) {
+        updates[`rankExp`] = (pData.rankExp || 0) + quest.rewardRankExp;
+        logs.push(`${quest.rewardRankExp} Rank EXP`);
+    }
+
+    // 3. รางวัลไอเทม
+    if (quest.rewardItem) {
+        const inv = pData.inventory || [];
+        inv.push({ name: quest.rewardItem, quantity: 1, itemType: 'รางวัล' });
+        updates[`inventory`] = inv;
+        logs.push(`ไอเทม [${quest.rewardItem}]`);
+    }
+
+    // 4. รางวัลพิเศษ: เลื่อนขั้นอาชีพ (Promotion)
+    if (quest.type === 'promotion' && quest.rewardClass) {
+        updates[`classMain`] = quest.rewardClass;
+        // อาจจะรีเซ็ต Level หรือเพิ่ม Stat Bonus ก็ได้ แล้วแต่ดีไซน์
+        logs.push(`🎉 เลื่อนขั้นเป็น [${quest.rewardClass}]`);
+    }
+
+    // 5. รางวัลพิเศษ: เลื่อนขั้นแรงค์ (Rank Up)
+    if (quest.type === 'rankup' && quest.rewardRank) {
+        updates[`adventurerRank`] = quest.rewardRank;
+        updates[`rankExp`] = 0; // รีเซ็ตแต้มแรงค์เมื่อขึ้นขั้นใหม่
+        logs.push(`🏆 เลื่อนระดับนักผจญภัยเป็น Rank [${quest.rewardRank}]`);
+    }
+
+    // 6. ลบ Active Quest
+    updates[`activeQuest`] = null;
+
+    // Apply Updates
+    await db.ref(`rooms/${roomId}/playersByUid/${uid}`).update(updates);
+
+    // ประกาศ
+    Swal.fire({
+        title: 'ภารกิจสำเร็จ!',
+        html: `คุณสำเร็จภารกิจ <b>${quest.title}</b><br>ได้รับ: ${logs.join(', ')}`,
+        icon: 'success'
+    });
+    
+    db.ref(`rooms/${roomId}/combatLogs`).push({
+        message: `📜 <b>${pData.name}</b> สำเร็จภารกิจ [${quest.title}]! ได้รับรางวัล: ${logs.join(', ')}`,
+        timestamp: Date.now()
+    });
 }

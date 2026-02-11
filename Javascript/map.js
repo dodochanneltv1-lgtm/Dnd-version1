@@ -6,6 +6,7 @@ let roomRef = null;
 let playerData = null; // (เก็บข้อมูลผู้เล่นปัจจุบัน)
 let guildQuests = {}; // (เก็บเควสเลื่อนขั้นทั้งหมด)
 let shopData = {}; // (เก็บข้อมูลร้านค้าทั้งหมด)
+let guildBoardQuests = {};
 
 // --- Helper Functions (ต้องถูกโหลดมาก่อนจาก charector.js) ---
 const calcHPFn = typeof calculateHP === 'function' ? calculateHP : () => { console.error("calculateHP not found!"); return 10; };
@@ -138,9 +139,9 @@ function loadGuildUI() {
     // โหลดเควสเลื่อนขั้น
     loadGuildQuests();
 }
-
 function loadGuildQuests() {
     const listDiv = document.getElementById('guild-quest-list');
+    // เปลี่ยนหัวข้อเล็กน้อย
     listDiv.innerHTML = '<h3 style="color:#ffc107; border-bottom:1px solid #555; padding-bottom:5px;">📋 ภารกิจเลื่อนขั้น</h3>';
     let foundQuest = false;
 
@@ -151,42 +152,58 @@ function loadGuildQuests() {
 
     for (const questId in guildQuests) {
         const quest = guildQuests[questId];
-        
-        // กรอง: อาชีพต้องตรง และ เลเวลต้องถึง
-        if (quest.requiredClass === playerData.classMain && playerData.level >= quest.requiredLevel) {
-            
-            const playerHasQuest = (playerData.quest && playerData.quest.id === questId);
-            
-            let btnHtml = '';
-            if (playerHasQuest) {
-                btnHtml = '<button disabled style="width:100%; padding:8px; background-color:#ffc107; color:#000; border:none; border-radius:5px; font-weight:bold; cursor:default;">กำลังดำเนินการ...</button>';
-            } else {
-                btnHtml = `<button onclick="acceptGuildQuest('${questId}')" style="width:100%; padding:8px; background:linear-gradient(90deg, #007bff, #0056b3); color:white; border:none; border-radius:5px; cursor:pointer; font-weight:bold;">รับภารกิจนี้</button>`;
-            }
 
-            listDiv.innerHTML += `
-                <div class="guild-quest" style="background:rgba(255,255,255,0.05); border-left:4px solid #007bff; padding:15px; margin-bottom:10px; border-radius:5px;">
-                    <div style="display:flex; justify-content:space-between;">
-                        <h4 style="margin:0; color:#fff;">${quest.title}</h4>
-                        <span style="font-size:0.8em; background:#333; padding:2px 6px; border-radius:4px; color:#aaa;">Lv.${quest.requiredLevel}+</span>
-                    </div>
-                    <p style="font-style:italic; color:#ccc; margin:10px 0; font-size:0.9em;">"${quest.description}"</p>
-                    <div style="font-size:0.9em; color:#ffeb8a; margin-bottom:10px;">
-                        <strong>🏆 รางวัล:</strong> เลื่อนขั้นอาชีพ
-                    </div>
-                    ${btnHtml}
-                </div>
-            `;
-            foundQuest = true;
+        // [Arch-Fix 1]: ผ่อนปรนเงื่อนไขการเช็ค Field (ถ้าไม่มีให้ถือว่าเป็นค่าว่าง)
+        const reqClass = quest.requiredClass || quest.requiredJob || "ไม่ระบุ"; // กันเหนียวเผื่อใช้ชื่อ field ผิด
+        const reqLevel = quest.requiredLevel || 0;
+
+        // เช็คเงื่อนไขของผู้เล่น
+        const isClassMatch = (reqClass === playerData.classMain) || (reqClass === "All") || (reqClass === "ไม่ระบุ");
+        const isLevelEnough = (playerData.level >= reqLevel);
+        const playerHasQuest = (playerData.quest && playerData.quest.id === questId);
+
+        // [Arch-Fix 2]: แสดงผลแม้เงื่อนไขไม่ผ่าน แต่แจ้งเตือนแทน
+        let statusHtml = '';
+        let btnDisabled = false;
+        let btnText = 'รับภารกิจ';
+        let btnStyle = 'background:linear-gradient(90deg,#ffb300,#ff6f00); color:#111;';
+
+        if (playerHasQuest) {
+            btnDisabled = true;
+            btnText = '✅ รับแล้ว';
+            btnStyle = 'background:#444; color:#bbb;';
+        } else if (!isClassMatch) {
+            btnDisabled = true;
+            btnText = `🔒 เฉพาะอาชีพ ${reqClass}`;
+            btnStyle = 'background:#333; color:#777; border:1px solid #555;';
+        } else if (!isLevelEnough) {
+            btnDisabled = true;
+            btnText = `🔒 ต้องการ Lv.${reqLevel}`;
+            btnStyle = 'background:#333; color:#777; border:1px solid #555;';
         }
+
+        const btnHtml = `<button onclick="acceptPromotionQuest('${questId}')" 
+            style="width:100%; padding:8px; border:none; border-radius:6px; font-weight:bold; ${btnStyle}"
+            ${btnDisabled ? 'disabled' : ''}>
+            ${btnText}
+        </button>`;
+
+        listDiv.innerHTML += `
+            <div style="background:#1f1f1f; border:1px solid ${btnDisabled ? '#333' : '#ffb300'}; padding:12px; margin:10px 0; border-radius:10px; opacity:${btnDisabled && !playerHasQuest ? '0.7' : '1'};">
+                <div style="font-size:16px; font-weight:bold; color:#fff;">${quest.title || 'ภารกิจไม่ระบุชื่อ'}</div>
+                <div style="color:#bbb; margin-top:6px;">${quest.description || quest.detail || '-'}</div>
+                <div style="color:#aaa; margin-top:6px; font-size:13px; display:flex; gap:10px;">
+                    <span style="color:${isClassMatch ? '#28a745' : '#ff4d4d'}">👤 อาชีพ: <b>${reqClass}</b></span>
+                    <span style="color:${isLevelEnough ? '#28a745' : '#ff4d4d'}">📊 เลเวล: <b>${reqLevel}</b></span>
+                </div>
+                <div style="margin-top:10px;">${btnHtml}</div>
+            </div>
+        `;
+        foundQuest = true;
     }
 
     if (!foundQuest) {
-        listDiv.innerHTML += `
-            <div style="text-align:center; padding:20px; color:#aaa; background:rgba(0,0,0,0.2); border-radius:8px; margin-top:10px;">
-                <p style="margin:0;">ยังไม่มีภารกิจสำหรับ <strong>${playerData.classMain}</strong> (Lv.${playerData.level})</p>
-                <small style="color:#777;">โปรดเก็บเลเวลเพิ่ม หรือรอ DM อัปเดต</small>
-            </div>`;
+        listDiv.innerHTML += '<p style="text-align:center; padding:20px; color:#aaa;"><em>- ยังไม่มีภารกิจเลื่อนขั้น -</em></p>';
     }
 }
 function loadColosseumUI() {
@@ -238,14 +255,14 @@ function updateColosseumButton(isRegistered) {
         }
     }
 }
-async function acceptGuildQuest(questId) {
+/*async function acceptGuildQuest(questId) {
     if (!guildQuests[questId]) return;
-    
+
     // (ตรวจสอบว่ามีเควสอยู่แล้วหรือไม่)
     if (playerData.quest) {
         return Swal.fire('ผิดพลาด', 'คุณมีเควสอื่นค้างอยู่ กรุณาส่งเควสเก่าก่อน', 'warning');
     }
-    
+
     const questData = {
         id: questId, // (บันทึก ID เควส)
         title: guildQuests[questId].title,
@@ -262,6 +279,45 @@ async function acceptGuildQuest(questId) {
     } catch (error) {
         Swal.fire('ผิดพลาด', 'ไม่สามารถรับเควสได้: ' + error.message, 'error');
     }
+}*/
+
+async function acceptPromotionQuest(questId) {
+    if (!guildQuests[questId]) return;
+
+    // มีเควสเลื่อนขั้นค้างอยู่แล้ว
+    if (playerData.quest) {
+        return Swal.fire('ผิดพลาด', 'คุณมีเควสเลื่อนขั้นค้างอยู่ กรุณาส่งเควสเก่าก่อน', 'warning');
+    }
+
+    const questData = {
+        id: questId,
+        title: guildQuests[questId].title || "เควสไม่ระบุชื่อ", // กันเหนียวชื่อ
+        
+        // [จุดที่ Error] ให้เติม || "ไม่มีรายละเอียด" ต่อท้าย
+        detail: guildQuests[questId].description || guildQuests[questId].detail || "ไม่มีรายละเอียด", 
+        
+        reward: "เลื่อนขั้นอาชีพ",
+        expReward: 0,
+        isGuildQuest: true
+    };
+
+    try {
+        await playerRef.child('quest').set(questData);
+        Swal.fire('สำเร็จ', `รับเควส "${questData.title}" แล้ว!`, 'success');
+        loadGuildQuests();
+    } catch (error) {
+        Swal.fire('ผิดพลาด', 'ไม่สามารถรับเควสได้: ' + error.message, 'error');
+    }
+}
+
+async function acceptGuildBoardQuest(questId) {
+    if (playerData.activeQuest) return showCustomAlert("คุณมีเควสที่กำลังทำอยู่แล้ว!", "warning");
+
+    let questToAccept = guildBoardQuests[questId];
+    questToAccept.currentCount = 0; // รีเซ็ตตัวนับเป็น 0
+
+    await db.ref(`rooms/${roomId}/playersByUid/${currentUserUid}/activeQuest`).set(questToAccept);
+    showCustomAlert("รับภารกิจแล้ว! ออกเดินทางได้เลย", "success");
 }
 
 /**
@@ -586,12 +642,13 @@ window.onload = function() {
     });
 
     // 2. ฟังข้อมูลกิลด์ (สำหรับเควสเลื่อนขั้น)
-    roomRef.child('guild/quests').on('value', (snapshot) => {
+    roomRef.child('guildQuests').on('value', (snapshot) => {
         guildQuests = snapshot.val() || {};
         // (อัปเดต UI ถ้าเปิดค้างอยู่)
-        if (playerData && document.getElementById('guild-panel').classList.contains('hidden') === false) {
+        if (playerData && document.getElementById('guild-panel') && !document.getElementById('guild-panel').classList.contains('hidden')) {
             loadGuildQuests();
         }
+        renderGuildBoard();
     });
 
     // 3. ฟังข้อมูลร้านค้า (สำหรับไอเทม)
@@ -703,7 +760,7 @@ function dmAddQuest() {
         requiredLevel: lvl
     };
 
-    db.ref(`rooms/${roomId}/guild/quests/${questId}`).set(questData)
+    db.ref(`rooms/${roomId}/guildQuests/${questId}`).set(questData)
         .then(() => Swal.fire('เรียบร้อย', 'ประกาศเควสแล้ว', 'success'));
 }
 
@@ -813,7 +870,12 @@ function renderGuildBoard() {
             <strong style="color:#1cb5e0; font-size:1.1em;">${q.title}</strong><br>
             <span style="font-size:0.9em; color:#ddd;">🎯 เป้าหมาย: ล่า <b>${q.targetMonster}</b> จำนวน ${q.requiredCount} ตัว</span><br>
             <span style="font-size:0.9em; color:#ddd;">🎁 รางวัล: เลื่อนขั้นเป็น <b>${q.rewardClass}</b></span><br>
-            ${!playerData.activeQuest ? `<button onclick="acceptGuildQuest('${qId}')" style="margin-top:8px; padding:5px; background:#007bff;">📝 รับภารกิจนี้</button>` : ''}
+            ${!playerData.activeQuest
+            ? `<button onclick="acceptGuildQuest('${qId}')" style="margin-top:8px; padding:5px; background:#007bff;">
+                📝 รับภารกิจนี้
+                </button>`
+            : ''
+            }
         </div>`;
         hasAvailable = true;
     }
@@ -824,13 +886,33 @@ function renderGuildBoard() {
 
 // 3. ฟังก์ชันรับเควส
 async function acceptGuildQuest(questId) {
-    if (playerData.activeQuest) return showCustomAlert("คุณมีเควสที่กำลังทำอยู่แล้ว!", "warning");
-    
-    let questToAccept = guildQuests[questId];
-    questToAccept.currentCount = 0; // รีเซ็ตตัวนับเป็น 0
-    
-    await db.ref(`rooms/${roomId}/playersByUid/${currentUserUid}/activeQuest`).set(questToAccept);
-    showCustomAlert("รับภารกิจแล้ว! ออกเดินทางได้เลย", "success");
+  if (!guildQuests || !guildQuests[questId]) return;
+
+  // ใช้มาตรฐานเดียวทั้งเกม: activeQuest
+  if (playerData?.activeQuest) {
+    return showCustomAlert("คุณมีเควสที่กำลังทำอยู่แล้ว!", "warning");
+  }
+
+  const q = guildQuests[questId];
+
+  // รองรับทั้งเควสล่ามอน/เควสอื่น ๆ
+  const questToAccept = {
+    ...q,
+    id: questId,
+    currentCount: 0,
+    // กันเควสบางอันไม่มี field
+    title: q.title || "ภารกิจกิลด์",
+    targetMonster: q.targetMonster || "",
+    requiredCount: Number(q.requiredCount || 0),
+    rewardClass: q.rewardClass || "",
+    forClass: q.forClass || q.guildQuestForClass || "",
+    questType: q.questType || "guild"
+  };
+
+  await db.ref(`rooms/${roomId}/playersByUid/${currentUserUid}/activeQuest`)
+    .set(questToAccept);
+
+  showCustomAlert(`รับภารกิจแล้ว: ${questToAccept.title}`, "success");
 }
 
 // 4. ฟังก์ชันส่งเควส & เลื่อนขั้นอาชีพ
@@ -858,6 +940,7 @@ async function cancelGuildQuest() {
     await db.ref(`rooms/${roomId}/playersByUid/${currentUserUid}/activeQuest`).remove();
     showCustomAlert("ยกเลิกภารกิจแล้ว", "info");
 }
+
 
 
 

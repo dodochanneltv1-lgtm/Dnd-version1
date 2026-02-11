@@ -1552,3 +1552,4 @@ window.selectTarget = function(enemyId) {
         displayEnemies(allEnemiesInRoom, currentCharacterData?.uid);
     }
 };
+
