@@ -1420,6 +1420,110 @@ async function transferItem(index, targetUid, targetName) {
     }
 }
 
+function checkLevelUp(data, uid, roomId) {
+    const currentExp = data.exp || 0;
+    const nextExp = data.expToNextLevel || 300;
+
+    if (currentExp >= nextExp) {
+        const newLevel = (data.level || 1) + 1;
+        const newFreePoints = (data.freeStatPoints || 0) + 10; // ให้ 10 แต้มต่อเลเวล
+        const nextLevelExp = Math.floor(nextExp * 1.8); // สูตร EXP เลเวลถัดไป
+
+        // อัปเดต Firebase
+        db.ref(`rooms/${roomId}/playersByUid/${uid}`).update({
+            level: newLevel,
+            exp: currentExp - nextExp, // ยกยอด EXP ที่เกินไปเลเวลหน้า
+            expToNextLevel: nextLevelExp,
+            freeStatPoints: newFreePoints
+        }).then(() => {
+            Swal.fire({
+                title: '🎉 LEVEL UP!',
+                text: `คุณเลื่อนระดับเป็น Lv.${newLevel} และได้รับ 10 แต้มสถานะ!`,
+                icon: 'success',
+                confirmButtonColor: '#ffae00'
+            });
+        });
+    }
+}
+
+async function openStatUpgradeModal() {
+    if (!currentCharacterData) return;
+    
+    let tempStats = { ...currentCharacterData.stats.investedStats };
+    let availablePoints = currentCharacterData.freeStatPoints || 0;
+    const statsKeys = ['STR', 'DEX', 'CON', 'INT', 'WIS', 'CHA' , 'EM'];
+
+    const renderHtml = () => {
+        let rows = statsKeys.map(key => `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; background: rgba(255,255,255,0.05); padding: 5px; border-radius: 8px;">
+                <b style="color: #ffc107; width: 50px;">${key}</b>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <button onclick="window.updateTempStat('${key}', -1)" style="width: 30px; height: 30px; border-radius: 50%; border: none; background: #dc3545; color: white;">-</button>
+                    <span id="modal-stat-${key}" style="min-width: 30px; text-align: center; font-size: 1.2em;">${tempStats[key] || 0}</span>
+                    <button onclick="window.updateTempStat('${key}', 1)" style="width: 30px; height: 30px; border-radius: 50%; border: none; background: #28a745; color: white;">+</button>
+                </div>
+            </div>
+        `).join('');
+        return `
+            <div style="color: #fff; font-family: 'Prompt', sans-serif;">
+                <p>แต้มคงเหลือ: <strong id="modal-points" style="color: #00ff00; font-size: 1.5em;">${availablePoints}</strong></p>
+                <hr style="border-color: #444;">
+                ${rows}
+            </div>
+        `;
+    };
+
+    // ประกาศฟังก์ชันไว้ใน window เพื่อให้ปุ่มใน Swal เรียกใช้ได้
+    window.updateTempStat = (key, val) => {
+        const currentVal = tempStats[key] || 0;
+        const originalVal = currentCharacterData.stats.investedStats[key] || 0;
+
+        if (val > 0 && availablePoints > 0) {
+            tempStats[key] = currentVal + 1;
+            availablePoints--;
+        } else if (val < 0 && currentVal > originalVal) {
+            tempStats[key] = currentVal - 1;
+            availablePoints++;
+        }
+        
+        document.getElementById(`modal-stat-${key}`).textContent = tempStats[key];
+        document.getElementById(`modal-points`).textContent = availablePoints;
+    };
+
+    const result = await Swal.fire({
+        title: '✨ อัปเกรดความสามารถ',
+        html: renderHtml(),
+        showCancelButton: true,
+        confirmButtonText: 'บันทึก',
+        cancelButtonText: 'ยกเลิก',
+        background: '#1a1a1a',
+        color: '#fff',
+        preConfirm: () => { return { tempStats, availablePoints }; }
+    });
+
+    if (result.isConfirmed) {
+        const { tempStats, availablePoints } = result.value;
+        const roomId = sessionStorage.getItem('roomId');
+        const uid = currentCharacterData.uid;
+
+        // คำนวณ MaxHP ใหม่หลังอัป CON ทันที
+        const newMaxHp = StatsEngine.calculateMaxHp({
+            ...currentCharacterData,
+            stats: { ...currentCharacterData.stats, investedStats: tempStats }
+        });
+
+        await db.ref(`rooms/${roomId}/playersByUid/${uid}`).update({
+            'stats/investedStats': tempStats,
+            freeStatPoints: availablePoints,
+            maxHp: newMaxHp,
+            hp: newMaxHp // อัปเลเวล/อัปแต้ม ให้เลือดเต็มเพื่อความเป็นธรรม
+        });
+        
+        Swal.fire('บันทึกสำเร็จ!', '', 'success');
+    }
+}
+
+
 // --- Initializer ---
 firebase.auth().onAuthStateChanged(user => {
     if (user) {
@@ -1476,7 +1580,7 @@ firebase.auth().onAuthStateChanged(user => {
                 delete afkData.__afkReason;
                 delete afkData.__afkAt;
 
-                // ย้ายกลับเข้าห้อง
+                // เตรียมข้อมูลสำหรับ Update
                 const updates = {};
                 updates[`rooms/${roomId}/playersByUid/${currentUserUid}`] = afkData;
                 updates[`rooms/${roomId}/afkPlayersByUid/${currentUserUid}`] = null;
@@ -1489,9 +1593,29 @@ firebase.auth().onAuthStateChanged(user => {
             }
 
             currentCharacterData = allPlayersInRoom[currentUserUid]; 
-            if (currentCharacterData) currentCharacterData.uid = currentUserUid; 
 
+            // ถ้ามีข้อมูลตัวละคร ให้ทำการเช็คและแสดงผล
             if (currentCharacterData) {
+                // อัปเดต UID ใน object ให้แน่ใจ
+                currentCharacterData.uid = currentUserUid; 
+
+                // ✅ 3. เรียกฟังก์ชันเช็ค Level Up (ใส่ตรงนี้เพื่อให้เช็คทุกครั้งที่มีการเปลี่ยนแปลง)
+                checkLevelUp(currentCharacterData, currentUserUid, roomId);
+
+                // ✅ 4. เช็ค MaxHP ให้ตรงกับสูตรใหม่ (ถ้าไม่ตรงให้อัปเดตเงียบๆ)
+                // ต้องแน่ใจว่าโหลด stats-engine.js แล้ว
+                if (typeof calculateMaxHp === 'function') {
+                    const correctMaxHp = calculateMaxHp(currentCharacterData);
+                    if (currentCharacterData.maxHp !== correctMaxHp) {
+                        console.log(`Auto-correcting MaxHP from ${currentCharacterData.maxHp} to ${correctMaxHp}`);
+                        // อัปเดตเฉพาะค่า maxHp ไปที่ Firebase
+                        db.ref(`rooms/${roomId}/playersByUid/${currentUserUid}/maxHp`).set(correctMaxHp);
+                        // อัปเดตค่า local เพื่อให้แสดงผลถูกต้องทันที
+                        currentCharacterData.maxHp = correctMaxHp;
+                    }
+                }
+
+                // แสดงผลต่างๆ
                 displayCharacter(currentCharacterData, combatState);
                 displayInventory(currentCharacterData.inventory);
                 displayEquippedItems(currentCharacterData.equippedItems);
@@ -1501,7 +1625,7 @@ firebase.auth().onAuthStateChanged(user => {
                 displayEnemies(allEnemiesInRoom, currentUserUid);
                 
                 updateTurnDisplay(combatState, currentUserUid);
-                displayStory(roomData.story);
+                if (roomData.story) displayStory(roomData.story);
 
                 if (!isInitialLoadComplete) {
                     hideLoading();
@@ -1509,10 +1633,12 @@ firebase.auth().onAuthStateChanged(user => {
                 }
 
             } else if (isInitialLoadComplete) {
-                 document.getElementById("characterInfoPanel").innerHTML = `<h2>สร้างตัวละคร</h2><p>คุณยังไม่มีตัวละครในห้องนี้</p><a href="PlayerCharecter.html"><button style="width:100%;">สร้างตัวละครใหม่</button></a>`;
-                 if (Swal.isVisible() && Swal.isLoading()) hideLoading();
+                // กรณีโหลดเสร็จแล้วแต่ยังไม่มีตัวละคร (หรือถูกลบไปจริงๆ ไม่ใช่ AFK)
+                document.getElementById("characterInfoPanel").innerHTML = `<h2>สร้างตัวละคร</h2><p>คุณยังไม่มีตัวละครในห้องนี้</p><a href="PlayerCharecter.html"><button style="width:100%;">สร้างตัวละครใหม่</button></a>`;
+                if (typeof Swal !== 'undefined' && Swal.isVisible() && Swal.isLoading()) hideLoading();
 
             } else {
+                // กรณีเพิ่งเข้ามาครั้งแรกแล้วไม่มีตัวละคร
                 hideLoading();
                 document.getElementById("characterInfoPanel").innerHTML = `<h2>สร้างตัวละคร</h2><p>คุณยังไม่มีตัวละครในห้องนี้</p><a href="PlayerCharecter.html"><button style="width:100%;">สร้างตัวละครใหม่</button></a>`;
                 isInitialLoadComplete = true;

@@ -270,3 +270,143 @@ function initializeAuthListener() {
 // 5. สั่งให้ฟังก์ชันตรวจสอบเริ่มทำงานทันทีที่ไฟล์นี้ถูกโหลด
 initializeAuthListener();
 
+firebase.auth().onAuthStateChanged(user => {
+    if (user) {
+        let isInitialLoadComplete = false;
+        const currentUserUid = user.uid;
+        localStorage.setItem('currentUserUid', currentUserUid); 
+        const roomId = sessionStorage.getItem('roomId');
+        if (!roomId) { window.location.replace('lobby.html'); return; }
+        
+        registerRoomPresence(roomId);
+
+        if (!isInitialLoadComplete) showLoading('กำลังโหลดข้อมูลตัวละคร...');
+        injectDashboardStyles();
+
+        const playerRef = db.ref(`rooms/${roomId}/playersByUid/${currentUserUid}`);
+        const roomRef = db.ref(`rooms/${roomId}`);
+
+        roomRef.child('combatLogs').limitToLast(1).on('child_added', snapshot => {
+            const log = snapshot.val();
+            if (log && log.timestamp > (Date.now() - 5000)) { 
+                const Toast = Swal.mixin({
+                    toast: true, position: 'top-end', showConfirmButton: false, timer: 3000,
+                    background: 'rgba(0, 0, 0, 0.9)', color: '#fff',
+                    didOpen: (toast) => {
+                        toast.addEventListener('mouseenter', Swal.stopTimer)
+                        toast.addEventListener('mouseleave', Swal.resumeTimer)
+                    }
+                });
+                
+                let icon = 'info';
+                if (log.message.includes('โจมตี')) icon = 'warning';
+                if (log.message.includes('พลาด')) icon = 'error';
+                if (log.message.includes('เข้า')) icon = 'success';
+
+                Toast.fire({ icon: icon, title: log.message });
+            }
+        });
+
+        db.ref(`rooms/${roomId}`).on('value', snapshot => {
+            const roomData = snapshot.val() || {};
+            
+            allPlayersInRoom = roomData.playersByUid || {};
+            allEnemiesInRoom = roomData.enemies || {};
+            combatState = roomData.combat || {};
+            const afkPlayers = roomData.afkPlayersByUid || {}; // ✅ 1. ดึงข้อมูลคน AFK มาดู
+
+            // ✅ 2. ตรวจสอบ: ถ้าไม่เจอในห้องปกติ แต่เจอในห้อง AFK ให้กู้คืนทันที!
+            if (!allPlayersInRoom[currentUserUid] && afkPlayers[currentUserUid]) {
+                console.log("Found player in AFK list! Auto-restoring...");
+                
+                const afkData = afkPlayers[currentUserUid];
+                // ลบ Tag AFK ทิ้ง
+                delete afkData.__afk;
+                delete afkData.__afkReason;
+                delete afkData.__afkAt;
+
+                // เตรียมข้อมูลสำหรับ Update
+                const updates = {};
+                updates[`rooms/${roomId}/playersByUid/${currentUserUid}`] = afkData;
+                updates[`rooms/${roomId}/afkPlayersByUid/${currentUserUid}`] = null;
+                
+                // สั่งอัปเดต Firebase ทันที
+                db.ref().update(updates);
+                
+                // หลอกระบบว่ามีตัวละครแล้ว (เพื่อให้เรนเดอร์ทันทีไม่ต้องรอ Firebase ตอบกลับ)
+                allPlayersInRoom[currentUserUid] = afkData;
+            }
+
+            currentCharacterData = allPlayersInRoom[currentUserUid]; 
+
+            // ถ้ามีข้อมูลตัวละคร ให้ทำการเช็คและแสดงผล
+            if (currentCharacterData) {
+                // อัปเดต UID ใน object ให้แน่ใจ
+                currentCharacterData.uid = currentUserUid; 
+
+                // ✅ 3. เรียกฟังก์ชันเช็ค Level Up (ใส่ตรงนี้เพื่อให้เช็คทุกครั้งที่มีการเปลี่ยนแปลง)
+                checkLevelUp(currentCharacterData, currentUserUid, roomId);
+
+                // ✅ 4. เช็ค MaxHP ให้ตรงกับสูตรใหม่ (ถ้าไม่ตรงให้อัปเดตเงียบๆ)
+                // ต้องแน่ใจว่าโหลด stats-engine.js แล้ว
+                if (typeof calculateMaxHp === 'function') {
+                    const correctMaxHp = calculateMaxHp(currentCharacterData);
+                    if (currentCharacterData.maxHp !== correctMaxHp) {
+                        console.log(`Auto-correcting MaxHP from ${currentCharacterData.maxHp} to ${correctMaxHp}`);
+                        // อัปเดตเฉพาะค่า maxHp ไปที่ Firebase
+                        db.ref(`rooms/${roomId}/playersByUid/${currentUserUid}/maxHp`).set(correctMaxHp);
+                        // อัปเดตค่า local เพื่อให้แสดงผลถูกต้องทันที
+                        currentCharacterData.maxHp = correctMaxHp;
+                    }
+                }
+
+                // แสดงผลต่างๆ
+                displayCharacter(currentCharacterData, combatState);
+                displayInventory(currentCharacterData.inventory);
+                displayEquippedItems(currentCharacterData.equippedItems);
+                displayQuest(currentCharacterData.quest);
+                displayTeammates(currentUserUid); 
+                
+                displayEnemies(allEnemiesInRoom, currentUserUid);
+                
+                updateTurnDisplay(combatState, currentUserUid);
+                if (roomData.story) displayStory(roomData.story);
+
+                if (!isInitialLoadComplete) {
+                    hideLoading();
+                    isInitialLoadComplete = true;
+                }
+
+            } else if (isInitialLoadComplete) {
+                // กรณีโหลดเสร็จแล้วแต่ยังไม่มีตัวละคร (หรือถูกลบไปจริงๆ ไม่ใช่ AFK)
+                document.getElementById("characterInfoPanel").innerHTML = `<h2>สร้างตัวละคร</h2><p>คุณยังไม่มีตัวละครในห้องนี้</p><a href="PlayerCharecter.html"><button style="width:100%;">สร้างตัวละครใหม่</button></a>`;
+                if (typeof Swal !== 'undefined' && Swal.isVisible() && Swal.isLoading()) hideLoading();
+
+            } else {
+                // กรณีเพิ่งเข้ามาครั้งแรกแล้วไม่มีตัวละคร
+                hideLoading();
+                document.getElementById("characterInfoPanel").innerHTML = `<h2>สร้างตัวละคร</h2><p>คุณยังไม่มีตัวละครในห้องนี้</p><a href="PlayerCharecter.html"><button style="width:100%;">สร้างตัวละครใหม่</button></a>`;
+                isInitialLoadComplete = true;
+            }
+        });
+
+    } else {
+        window.location.replace('login.html');
+    }
+
+    playerRef.child('pendingAttack').on('value', s => {
+            const val = s.val();
+            
+            if (val && !Swal.isVisible()) {
+                handlePendingAttack(val, playerRef);
+            } 
+            
+            else if (!val && Swal.isVisible()) {
+                const titleEl = Swal.getTitle();
+                if (titleEl && titleEl.textContent.includes('ถูกโจมตี')) {
+                    Swal.close(); 
+                }
+            }
+        });
+});
+// --- END OF FILE ---

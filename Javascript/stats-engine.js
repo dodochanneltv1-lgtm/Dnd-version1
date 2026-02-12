@@ -1,5 +1,3 @@
-/* stats-engine.js (v3 - Fix MaxHP Explosion) */
-
 (function (global) {
   "use strict";
 
@@ -21,7 +19,7 @@
   }
 
   function getStatBonus(statValue) {
-      return Math.floor(statValue *0.1);
+      return Math.floor(statValue * 0.1);
   }
 
   function getTotalLevel(charData) {
@@ -54,46 +52,30 @@
     return (ctx?.allPlayers || global.allPlayersDataByUID || global.allPlayersInRoom || {});
   }
 
-  // --- [FIXED] ฟังก์ชันคำนวณ Max HP แบบสมดุล ---
+  // --- [FIXED] ฟังก์ชันคำนวณ Max HP แบบสมดุล (ป้องกันเลือดระเบิด) ---
   function calculateMaxHp(charData) {
     if (!charData) return 100;
 
-    // 1. หาค่า CON โดย *ปิด* Level Scaling (เอาค่าเนื้อๆ มาคิด)
-    // เพื่อป้องกันเลือดเฟ้อแบบทวีคูณ (Exponential)
-    const conTotal = calculateTotalStat(charData, 'CON', { flags: { enableLevelScaling: false } });
-    const conMod = getStatBonus(conTotal);
-    
-    // 2. ดึงข้อมูล Base HP
-    const { CLASS_DATA, RACE_DATA } = getGlobals();
-    const classId = charData.classMain;
-    const raceId = charData.raceEvolved || charData.race;
-    
-    let baseHp = 8; // ค่ามาตรฐาน
-    if (CLASS_DATA && CLASS_DATA[classId]) {
-        baseHp = toNumber(CLASS_DATA[classId].baseHp, toNumber(CLASS_DATA[classId].hitDie, 8)); 
-    }
-
-    let raceBonus = 0;
-    if (RACE_DATA && RACE_DATA[raceId]) {
-        raceBonus = toNumber(RACE_DATA[raceId].hpBonus, 0);
-    }
-
+    // 1. ดึงค่า Level ที่แท้จริง (รวมบัฟ)
     const level = getTotalLevel(charData);
     
-    // 3. สูตรใหม่ (Standard RPG): 
-    // (Base + Race + ConMod) * Level
-    // ตัด *2 ออก และใช้ Con ที่ไม่เฟ้อ รับรองเลขสวยครับ
-    let hpPerLevel = baseHp + raceBonus + conMod;
+    // 2. คำนวณ CON โดยปิด Level Scaling (เพื่อไม่ให้คูณซ้อนในสูตร HP)
+    const conTotal = calculateTotalStat(charData, 'CON', { 
+        flags: { enableLevelScaling: false } 
+    });
+    const conMod = Math.floor((conTotal - 10) / 2); 
     
-    // กันเหนียว: เลเวลอัพแล้วเลือดห้ามลดหรือน้อยเกินไป (ขั้นต่ำ 4 ต่อเลเวล)
-    hpPerLevel = Math.max(4, hpPerLevel);
+    // 3. Base HP ตามอาชีพ (Default 10)
+    let baseHp = 10; 
+    const { CLASS_DATA } = getGlobals();
+    if (CLASS_DATA && charData.classMain) {
+        baseHp = CLASS_DATA[charData.classMain]?.baseHp || 10;
+    }
 
-    let totalMaxHp = hpPerLevel * level;
+    // 4. สูตรคำนวณ: (Base + ConMod) * Level + (CON * 2) + 50 (Flat Bonus เพื่อให้เลือดเริ่มที่หลักร้อย)
+    let totalMaxHp = (baseHp + conMod) * level + (conTotal * 2) + 50;
 
-    // เพิ่ม Base Start นิดหน่อย (เช่น +10) เพื่อให้เลเวล 1 ไม่ตายง่ายไป
-    totalMaxHp += 5; 
-
-    return Math.floor(totalMaxHp);
+    return Math.max(50, Math.floor(totalMaxHp));
   }
 
   function computeEnemyBaseStat(charData, upperStatKey) {
@@ -243,11 +225,11 @@
 
     let finalStat = (baseStat * (1 + (percentBonus / 100))) + flatBonus + equipBonus;
     
-    // Level Scaling (ตัวการที่ทำให้ CON เฟ้อ)
+    // Level Scaling (เฉพาะเมื่อ enableLevelScaling = true)
     if (flags.enableLevelScaling) {
       const totalLevel = getTotalLevel(charData);
       if (finalStat > 0 && totalLevel > 1) {
-        finalStat += (finalStat * (totalLevel - 1) * 0.2);
+        finalStat += (finalStat * (totalLevel - 1) * 0.2); // +20% ต่อเลเวล
       }
     }
     return Math.floor(finalStat);
